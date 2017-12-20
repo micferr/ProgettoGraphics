@@ -39,9 +39,9 @@ vector<string> grammar::produce() {
         } else { // c is a term
             i++;
         }
-
-        return word;
     }
+
+	return word;
 }
 
 }
