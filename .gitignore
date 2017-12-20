@@ -1,0 +1,3 @@
+build/*
+bin/*
+src/test_main.cpp
