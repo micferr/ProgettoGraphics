@@ -3,13 +3,15 @@
 
 #include <vector>
 #include <map>
-#include <list>
+#include <queue>
+
+#include "node.h"
 
 namespace rekt {
 
 using std::vector;
 using std::map;
-using std::list;
+using std::queue;
 
 template<typename T>
 class grammar {
@@ -38,26 +40,31 @@ public:
     /**
      * Returns a random word from the grammar by using
      * leftmost derivation.
+	 * The word symbols are the leaves of the returned tree, in the
+	 * order determined by a DFS, minus variables V involved in a
+	 * V -> <empty> production.
+	 *
+	 * TODO: multithreaded expansion
      */
-    vector<T> produce() {
-		list<T> word;
-		word.push_back(S);
+    node<T>* produce() {
+		node<T>* root = new node<T>(S);
+		queue<node<T>*> nodes;
+		nodes.push(root);
+		while (!nodes.empty()) {
+			node<T>* n = nodes.front();
+			nodes.pop();
 
-		for (auto it = word.begin(); it != word.end();) {
-			auto& c = *it; // current symbol
-			auto prod = prods.find(c);
-			if (prod != prods.end()) { // c is a variable
+			auto& prod = prods.find(n->value);
+			if (prod != prods.end()) {
 				auto& prod_rules = (*prod).second;
-				auto& substitute = prod_rules[rand() % prod_rules.size()];
-				it = word.erase(it);
-				it = word.insert(it, substitute.begin(), substitute.end());
-			}
-			else { // c is a term
-				it++;
+				auto& substitution = prod_rules[rand() % prod_rules.size()];
+				for (auto& child_value : substitution) {
+					n->add_child(child_value);
+					nodes.push(n->children.back());
+				}
 			}
 		}
-
-		return vector<T>(word.begin(), word.end());
+		return root;
 	}
 };
 
