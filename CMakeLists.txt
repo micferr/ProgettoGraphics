@@ -24,6 +24,7 @@ add_definitions(-DYOBJ_NO_IMAGE -DYGLTF_NO_IMAGE -DYSCN_NO_IMAGE)
 
 add_library(hwlib STATIC
     src/grammar.h
+	src/node.h
 )
 
 add_executable(test_main src/test_main.cpp)
