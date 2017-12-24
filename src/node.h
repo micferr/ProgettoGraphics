@@ -66,6 +66,19 @@ namespace rekt {
 		__print_tree(root, 0);
 	}
 
+	/**
+	 * Returns the depth of a tree.
+	 *
+	 * A tree consisting of one node has depth 0
+	 */
+	template<typename T>
+	int depth(const node<T>& root) {
+		int d = 0;
+		for (auto c : root.children) {
+			d = std::max(d, 1 + depth(*c));
+		}
+		return d;
+	}
 }
 
 #endif // NODE_H
