@@ -62,7 +62,6 @@ namespace rekt {
 				node<T>* n = nodes.front();
 				nodes.pop();
 
-				//if (prod != prods.end()) {
 				if (is_variable(n->value)) {
 					auto& prod = prods.find(n->value);
 					auto& prod_rules = (*prod).second;

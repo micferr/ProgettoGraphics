@@ -12,7 +12,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-# compile flags
+
 if(APPLE)
     add_definitions(-Wno-missing-braces)
 endif(APPLE)
@@ -23,11 +23,11 @@ endif(WIN32)
 add_definitions(-DYOBJ_NO_IMAGE -DYGLTF_NO_IMAGE -DYSCN_NO_IMAGE)
 add_definitions(-DYGL_IMAGEIO=1 -DYGL_GLTF=1 )
 
-add_library(yocto_gl 
+add_library(yocto_gl
 	src/grammar.h
 	src/node.h
 
-	src/yocto_gl.h 
+	src/yocto_gl.h
 	src/yocto_gl.cpp
 	src/ext/stb_image.cpp
 )
