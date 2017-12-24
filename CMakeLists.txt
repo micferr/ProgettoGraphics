@@ -27,9 +27,9 @@ add_library(yocto_gl
 	src/grammar.h
 	src/node.h
 
-	src/yocto_gl.h
-	src/yocto_gl.cpp
-	src/ext/stb_image.cpp
+	src/yocto/yocto_gl.h
+	src/yocto/yocto_gl.cpp
+	src/yocto/ext/stb_image.cpp
 )
 
 add_executable(test_main src/test_main.cpp)
