@@ -21,11 +21,16 @@ if(WIN32)
 endif(WIN32)
 
 add_definitions(-DYOBJ_NO_IMAGE -DYGLTF_NO_IMAGE -DYSCN_NO_IMAGE)
+add_definitions(-DYGL_IMAGEIO=1 -DYGL_GLTF=1 )
 
-add_library(hwlib STATIC
-    src/grammar.h
+add_library(yocto_gl 
+	src/grammar.h
 	src/node.h
+
+	src/yocto_gl.h 
+	src/yocto_gl.cpp
+	src/ext/stb_image.cpp
 )
 
 add_executable(test_main src/test_main.cpp)
-target_link_libraries(test_main hwlib)
+target_link_libraries(test_main yocto_gl)
