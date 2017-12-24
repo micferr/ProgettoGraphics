@@ -37,6 +37,14 @@ namespace rekt {
 			}
 		}
 
+		bool is_terminal(const T& value) {
+			return prods.count(value) == 0;
+		}
+
+		bool is_variable(const T& value) {
+			return !is_terminal(value);
+		}
+
 		/**
 		 * Returns a random word from the grammar by using
 		 * leftmost derivation.
@@ -54,8 +62,9 @@ namespace rekt {
 				node<T>* n = nodes.front();
 				nodes.pop();
 
-				auto& prod = prods.find(n->value);
-				if (prod != prods.end()) {
+				//if (prod != prods.end()) {
+				if (is_variable(n->value)) {
+					auto& prod = prods.find(n->value);
 					auto& prod_rules = (*prod).second;
 					auto& substitution = prod_rules[rand() % prod_rules.size()];
 					for (auto& child_value : substitution) {
