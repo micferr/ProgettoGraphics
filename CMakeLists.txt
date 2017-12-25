@@ -26,6 +26,7 @@ add_definitions(-DYGL_IMAGEIO=1 -DYGL_GLTF=1 )
 add_library(yocto_gl
 	src/grammar.h
 	src/node.h
+	src/geom_utils.h
 
 	src/yocto/yocto_gl.h
 	src/yocto/yocto_gl.cpp
