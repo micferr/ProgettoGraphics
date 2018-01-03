@@ -74,6 +74,61 @@ namespace rekt {
 		return 1.f / (n + 1.f);
 	}
 
+	/**
+	 * Generates a random value with normal distribution
+	 */
+	float gaussian(ygl::rng_pcg32& rng, float mean, float variance) {
+		// Box-Muller transform's basic form
+		// (see https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform#Basic_form )
+		// TODO?: Use inverse transform instead?
+
+		float theta = ygl::next_rand1f(rng);
+		float rnd = sqrt(-2.f * log(theta)) * cos(2 * pi * theta);
+		return rnd * variance + mean;
+	}
+
+	/**
+	 * Returns a random int in [0, weights.size()), with integer i
+	 * having a probability of being chosen of weights[i]/(sum_j weights[j])
+	 */
+	int random_weighted(const std::vector<float>& weights, ygl::rng_pcg32& rng) {
+		float weights_total = 0.f;
+		for (auto w : weights) weights_total += w;
+		float r = ygl::next_rand1f(rng, 0.f, weights_total);
+		int which = 0;
+		while (r > weights[which]) {
+			r -= weights[which];
+			which++;
+		}
+		return which;
+	}
+
+	/**
+	 * Choose a random element from a vector
+	 */
+	template<typename T>
+	T choose_random(const std::vector<T>& v, ygl::rng_pcg32& rng) {
+		return v[ygl::next_rand1i(rng, v.size())];
+	}
+
+	/**
+	 * Randomly picks an element from a vector; element v[i] is chosen
+	 * with probability weights[i]/(sum_j weights[j])
+	 */
+	template<typename T>
+	T choose_random_weighted(
+		const std::vector<T>& v,
+		const std::vector<float> weights, 
+		ygl::rng_pcg32& rng
+	) {
+		if (v.size() != weights.size()) {
+			throw std::exception("v and weights must have equal size");
+		}
+		if (v.size() == 0) {
+			throw std::exception("Must pick from at least one element");
+		}
+		return v[random_weighted(weights, rng)];
+	}
 }
 
 #endif // PROB_UTILS_H
