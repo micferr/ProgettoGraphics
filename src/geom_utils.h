@@ -111,21 +111,13 @@ namespace rekt {
 	}
 
 	template<typename T>
-	std::vector<T> displace(const std::vector<T>& points, T& disp) {
-		std::vector<T> res;
-		std::for_each(points.begin(), points.end(), [&res, &disp](const T& p){
-			res.push_back(p+disp);
-		});
-		return res;
+	void displace(std::vector<T>& points, T& disp) {
+		for (auto& p : points) p += disp;
 	}
 
 	template<typename T>
-	std::vector<T> scale(const std::vector<T>& points, float scale) {
-		std::vector<T> res;
-		std::for_each(points.begin(), points.end(), [&res, scale](const T& p) {
-			res.push_back(p * scale);
-		});
-		return res;
+	void scale(std::vector<T>& points, float scale) {
+		for (auto& p : points) p *= scale;
 	}
 
 	/**
@@ -134,14 +126,12 @@ namespace rekt {
 	 * The function is quite inefficient, to rotate an in-world instance try changing
 	 * its frame rather than using this.
 	 */
-	std::vector<ygl::vec2f> rotate(const std::vector<ygl::vec2f>& points, float angle) {
-		std::vector<ygl::vec2f> res;
-		std::for_each(points.begin(), points.end(), [&res, angle](const ygl::vec2f& p) {
+	void rotate(std::vector<ygl::vec2f>& points, float angle) {
+		for (auto& p : points) {
 			float new_angle = atan2f(p.y, p.x) + angle;
 			float length = ygl::length(p);
-			res.push_back({ length*cos(new_angle), length*sin(new_angle) });
-		});
-		return res;
+			p = { length*cos(new_angle), length*sin(new_angle) };
+		}
 	}
 
 	/**
