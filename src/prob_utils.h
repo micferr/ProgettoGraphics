@@ -77,14 +77,25 @@ namespace rekt {
 	/**
 	 * Generates a random value with normal distribution
 	 */
-	float gaussian(ygl::rng_pcg32& rng, float mean, float variance) {
-		// Box-Muller transform's basic form
-		// (see https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform#Basic_form )
-		// TODO?: Use inverse transform instead?
+	float gaussian(ygl::rng_pcg32& rng, float mu, float sigma) {
+		// Box-Muller transform's polar form.
+		// See
+		//     G.E.P. Box, M.E. Muller
+		//     "A Note on the Generation of Random Normal Deviates", 
+		//     The Annals of Mathematical Statistics (1958), Vol. 29, No. 2 pp. 610–611
+		// TODO?:
+		//     Box-Muller suffers from tail-truncation.
+		//     Methods such as Inverse CDF, Ziggurat and Ratio of uniforms
+		//     may be better
 
-		float theta = ygl::next_rand1f(rng);
-		float rnd = sqrt(-2.f * log(theta)) * cos(2 * pi * theta);
-		return rnd * variance + mean;
+		// This a simple implementation from the original Box and Muller's paper
+		// as no better license-able version was found
+
+		float u1 = ygl::next_rand1f(rng);
+		float u2 = ygl::next_rand1f(rng);
+		
+		float x1 = sqrt(-2.f*log(u1))*cos(2.f*pi*u2);
+		return x1 * sigma + mu;
 	}
 
 	/**
