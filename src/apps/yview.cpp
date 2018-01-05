@@ -89,10 +89,10 @@ struct app_state {
 
     // lighting
     bool camera_lights = false;
-    vec3f amb = {0, 0, 0};
+	vec3f amb = {0, 0, 0};
 
     // ui
-    bool interactive = false;
+    bool interactive = true;
     bool scene_updated = false;
 
     // shade
@@ -101,7 +101,7 @@ struct app_state {
     shade_state* shstate = nullptr;
 
     // navigation
-    bool navigation_fps = false;
+    bool navigation_fps = true;
 
     // editing support
     void* selection = nullptr;
@@ -352,13 +352,8 @@ bool update(app_state* st) { return false; }
 //
 inline void run_ui(app_state* app, int w, int h, const string& title) {
     // window
-	std::cout << "____";
     auto win = make_window(w, h, title, app);
-	if (win == nullptr) std::cout << "Ahia";
-	std::cout << "XXXXX";
-	std::cout << "gl_window's address: " << win << std::endl;
     set_window_callbacks(win, nullptr, nullptr, draw);
-	std::cout << "AAAAA";
     // window values
     int mouse_button = 0;
     vec2f mouse_pos, mouse_last;
