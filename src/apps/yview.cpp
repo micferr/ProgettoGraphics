@@ -101,7 +101,7 @@ struct app_state {
     shade_state* shstate = nullptr;
 
     // navigation
-    bool navigation_fps = false;
+    bool navigation_fps = true;
 
     // editing support
     void* selection = nullptr;
