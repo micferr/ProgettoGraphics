@@ -89,10 +89,10 @@
 #if YGL_OPENGL
 #ifdef __APPLE__
 #include <OpenGL/gl3.h>
+#define GLFW_INCLUDE_GLCOREARB
 #else
 #include <GL/glew.h>
 #endif
-#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 #include "ext/imgui/imgui.h"
 #include "ext/imgui/imgui_impl_glfw_gl3.h"
@@ -604,9 +604,9 @@ image4f make_sunsky_image(
 
     auto img = image4f(2 * res, res);
     for (auto j = 0; j < img.height(); j++) {
-        if (!has_ground && j > img.height() / 2) continue;
+        if (!has_ground && j >= img.height() / 2) continue;
         auto theta = pif * ((j + 0.5f) / img.height());
-        theta = clamp(theta, 0.0f, pif / 2);
+        theta = clamp(theta, 0.0f, pif / 2 - flt_eps);
         for (int i = 0; i < img.width(); i++) {
             auto phi = 2 * pif * (float(i + 0.5f) / img.width());
             auto w =
@@ -937,7 +937,7 @@ inline float eval_ggx(float rs, float ndh, float ndi, float ndo) {
     auto alpha2 = rs * rs;
     auto di = (ndh * ndh) * (alpha2 - 1) + 1;
     auto d = alpha2 / (pif * di * di);
-#ifndef YTRACE_GGX_SMITH
+#ifndef YGL_GGX_SMITH
     auto lambda_o = (-1 + sqrt(1 + alpha2 * (1 - ndo * ndo) / (ndo * ndo))) / 2;
     auto lambda_i = (-1 + sqrt(1 + alpha2 * (1 - ndi * ndi) / (ndi * ndi))) / 2;
     auto g = 1 / (1 + lambda_o + lambda_i);
@@ -978,7 +978,8 @@ inline vec3f sample_ggx(float rs, const vec2f& rn) {
 // https://www.cs.cornell.edu/~srm/publications/EGSR07-btdf.pdf
 // - uses Kajiya-Kay for hair
 // - uses a hack for points
-inline vec3f eval_brdfcos(const point& pt, const vec3f& wi) {
+inline vec3f eval_brdfcos(
+    const point& pt, const vec3f& wi, bool delta = false) {
     // grab variables
     auto& fr = pt.fr;
     auto& wn = pt.frame.z;
@@ -1004,8 +1005,8 @@ inline vec3f eval_brdfcos(const point& pt, const vec3f& wi) {
                 brdfcos += fr.kd * ndi / pif;
             }
 
-            // specular term
-            if (fr.ks != zero3f && ndi > 0 && ndo > 0 && ndh > 0) {
+            // specular term (GGX)
+            if (fr.ks != zero3f && ndi > 0 && ndo > 0 && ndh > 0 && fr.rs) {
                 // microfacet term
                 auto dg = eval_ggx(fr.rs, ndh, ndi, ndo);
 
@@ -1015,6 +1016,15 @@ inline vec3f eval_brdfcos(const point& pt, const vec3f& wi) {
 
                 // sum up
                 brdfcos += ks * ndi * dg / (4 * ndi * ndo);
+            }
+
+            // specular term (mirror)
+            if (fr.ks != zero3f && ndi > 0 && ndo > 0 && !fr.rs && delta) {
+                // handle fresnel
+                auto ks = eval_fresnel_schlick(fr.ks, ndo, fr.rs);
+
+                // sum up
+                brdfcos += ks;
             }
 
             // transmission hack
@@ -1069,7 +1079,8 @@ inline vec3f eval_brdfcos(const point& pt, const vec3f& wi) {
 }
 
 // Compute the weight for sampling the BRDF
-inline float weight_brdfcos(const point& pt, const vec3f& wi) {
+inline float weight_brdfcos(
+    const point& pt, const vec3f& wi, bool delta = false) {
     // grab variables
     auto& fr = pt.fr;
     auto& wn = pt.frame.z;
@@ -1102,11 +1113,17 @@ inline float weight_brdfcos(const point& pt, const vec3f& wi) {
             if (kdw && ndo > 0 && ndi > 0) { pdf += kdw * ndi / pif; }
 
             // specular term (GGX)
-            if (ksw && ndo > 0 && ndi > 0 && ndh > 0) {
+            if (ksw && ndo > 0 && ndi > 0 && ndh > 0 && fr.rs) {
                 // probability proportional to d adjusted by wh projection
                 auto d = pdf_ggx(fr.rs, ndh);
                 auto hdo = dot(wo, wh);
                 pdf += ksw * d / (4 * hdo);
+            }
+
+            // specular term (mirror)
+            if (ksw && ndo > 0 && ndi > 0 && !fr.rs && delta) {
+                // probability proportional to d adjusted by wh projection
+                pdf += ksw;
             }
 
             // transmission hack
@@ -1156,7 +1173,8 @@ inline vec3f refract(const vec3f& w, const vec3f& n, float eta) {
 }
 
 // Picks a direction based on the BRDF
-inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
+inline tuple<vec3f, bool> sample_brdfcos(
+    const point& pt, float rnl, const vec2f& rn) {
     // grab variables
     auto& fr = pt.fr;
     auto& wn = pt.frame.z;
@@ -1164,7 +1182,7 @@ inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
     auto& wo = pt.wo;
 
     // skip if no component
-    if (!fr) return zero3f;
+    if (!fr) return {zero3f, false};
 
     // probability of each lobe
     auto kdw = max_element(fr.kd).second, ksw = max_element(fr.ks).second,
@@ -1182,7 +1200,7 @@ inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
             auto ndo = dot(wn, wo);
 
             // check to make sure we are above the surface
-            if (ndo <= 0) return zero3f;
+            if (ndo <= 0) return {zero3f, false};
 
             // sample according to diffuse
             if (rnl < kdw) {
@@ -1191,20 +1209,25 @@ inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
                      rphi = 2 * pif * rn.x;
                 // set to wi
                 auto wi_local = vec3f{rr * cosf(rphi), rr * sinf(rphi), rz};
-                return transform_direction(fp, wi_local);
+                return {transform_direction(fp, wi_local), false};
             }
             // sample according to specular GGX
-            else if (rnl < kdw + ksw) {
+            else if (rnl < kdw + ksw && fr.rs) {
                 // sample wh with ggx distribution
                 auto wh_local = sample_ggx(fr.rs, rn);
                 auto wh = transform_direction(fp, wh_local);
                 // compute wi
-                return normalize(wh * 2.0f * dot(wo, wh) - wo);
+                return {normalize(wh * 2.0f * dot(wo, wh) - wo), false};
+            }
+            // sample according to specular mirror
+            else if (rnl < kdw + ksw && !fr.rs) {
+                // compute wi
+                return {normalize(wn * 2.0f * dot(wo, wn) - wo), true};
             }
             // transmission hack
             else if (rnl < kdw + ksw + ktw) {
                 // continue ray direction
-                return -wo;
+                return {-wo, true};
             } else
                 assert(false);
         } break;
@@ -1216,12 +1239,12 @@ inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
                 auto rz = 2 * rn.y - 1, rr = sqrtf(1 - rz * rz),
                      rphi = 2 * pif * rn.x;
                 auto wi_local = vec3f{rr * cosf(rphi), rr * sinf(rphi), rz};
-                return transform_direction(fp, wi_local);
+                return {transform_direction(fp, wi_local), false};
             }
             // transmission hack
             else if (rnl < kdw + ksw + ktw) {
                 // continue ray direction
-                return -wo;
+                return {-wo, true};
             } else
                 assert(false);
         } break;
@@ -1233,12 +1256,12 @@ inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
                 auto rz = 2 * rn.y - 1, rr = sqrtf(1 - rz * rz),
                      rphi = 2 * pif * rn.x;
                 auto wi_local = vec3f{rr * cosf(rphi), rr * sinf(rphi), rz};
-                return transform_direction(fp, wi_local);
+                return {transform_direction(fp, wi_local), false};
             }
             // transmission hack
             else if (rnl < kdw + ksw + ktw) {
                 // continue ray direction
-                return -wo;
+                return {-wo, true};
             } else
                 assert(false);
         } break;
@@ -1246,7 +1269,7 @@ inline vec3f sample_brdfcos(const point& pt, float rnl, const vec2f& rn) {
     }
 
     // done
-    return zero3f;
+    return {zero3f, false};
 }
 
 // Create a point for an environment map. Resolves material with textures.
@@ -1264,14 +1287,17 @@ inline point eval_envpoint(const environment* env, const vec3f& wo) {
     auto ke = env->ke;
     if (env->ke_txt) {
         auto w = transform_direction_inverse(env->frame, -wo);
-        auto theta = clamp(w.y, (float)-1, (float)1);
+        auto theta = acos(clamp(w.y, (float)-1, (float)1));
         auto phi = atan2(w.z, w.x);
-        auto texcoord = vec2f{0.5f + phi / (2 * pif), 1 + 0.5f * theta / pif};
+        auto texcoord = vec2f{0.5f + phi / (2 * pif), theta / pif};
         ke *= eval_texture(env->ke_txt, texcoord).xyz();
     }
 
     // create emission lobe
-    if (ke != zero3f) { pt.em = {emission_type::env, ke}; }
+    if (ke != zero3f) {
+        pt.em.type = emission_type::env;
+        pt.em.ke = ke;
+    }
 
     // done
     return pt;
@@ -1553,13 +1579,14 @@ inline vec3f eval_li_pathtrace(const scene* scn, const ray3f& ray, sampler& smp,
         }
 
         // direct – brdf
-        auto bpt = intersect_scene(
-            scn, offset_ray(pt,
-                     sample_brdfcos(pt, sample_next1f(smp), sample_next2f(smp)),
-                     params));
-        auto bw = weight_brdfcos(pt, -bpt.wo);
+        auto bwi = zero3f;
+        auto bdelta = false;
+        std::tie(bwi, bdelta) =
+            sample_brdfcos(pt, sample_next1f(smp), sample_next2f(smp));
+        auto bpt = intersect_scene(scn, offset_ray(pt, bwi, params));
+        auto bw = weight_brdfcos(pt, -bpt.wo, bdelta);
         auto bke = eval_emission(bpt);
-        auto bbc = eval_brdfcos(pt, -bpt.wo);
+        auto bbc = eval_brdfcos(pt, -bpt.wo, bdelta);
         auto bld = bke * bbc * bw;
         if (bld != zero3f) {
             l += weight * bld * weight_mis(bw, weight_light(bpt, pt));
@@ -1627,8 +1654,12 @@ inline vec3f eval_li_pathtrace_nomis(const scene* scn, const ray3f& ray,
         }
 
         // continue path
-        auto bwi = sample_brdfcos(pt, sample_next1f(smp), sample_next2f(smp));
-        weight *= eval_brdfcos(pt, bwi) * weight_brdfcos(pt, bwi);
+        auto bwi = zero3f;
+        auto bdelta = false;
+        std::tie(bwi, bdelta) =
+            sample_brdfcos(pt, sample_next1f(smp), sample_next2f(smp));
+        weight *=
+            eval_brdfcos(pt, bwi, bdelta) * weight_brdfcos(pt, bwi, bdelta);
         if (weight == zero3f) break;
 
         auto bpt = intersect_scene(scn, offset_ray(pt, bwi, params));
@@ -1677,8 +1708,12 @@ inline vec3f eval_li_pathtrace_hack(const scene* scn, const ray3f& ray,
         }
 
         // continue path
-        auto bwi = sample_brdfcos(pt, sample_next1f(smp), sample_next2f(smp));
-        weight *= eval_brdfcos(pt, bwi) * weight_brdfcos(pt, bwi);
+        auto bwi = zero3f;
+        auto bdelta = false;
+        std::tie(bwi, bdelta) =
+            sample_brdfcos(pt, sample_next1f(smp), sample_next2f(smp));
+        weight *=
+            eval_brdfcos(pt, bwi, bdelta) * weight_brdfcos(pt, bwi, bdelta);
         if (weight == zero3f) break;
 
         auto bpt = intersect_scene(scn, offset_ray(pt, bwi, params));
@@ -1717,6 +1752,13 @@ inline vec3f eval_li_direct(const scene* scn, const ray3f& ray, int bounce,
 
     // exit if needed
     if (bounce >= params.max_depth) return l;
+
+    // reflection
+    if (pt.fr.ks != zero3f && !pt.fr.rs) {
+        auto wi = reflect(pt.wo, pt.frame.z);
+        auto ray = offset_ray(pt, wi, params);
+        l += pt.fr.ks * eval_li_direct(scn, ray, bounce + 1, smp, params, hit);
+    }
 
     // opacity
     if (pt.fr.kt != zero3f) {
@@ -1824,44 +1866,32 @@ inline eval_li_fn get_shader(const trace_params& params) {
 // triangle filter (public domain from stb_image_resize)
 inline float filter_triangle(float x) {
     x = (float)fabs(x);
-
-    if (x <= 1.0f)
-        return 1 - x;
-    else
-        return 0;
+    if (x <= 1.0f) return 1 - x;
+    return 0;
 }
 
 // cubic filter (public domain from stb_image_resize)
 inline float filter_cubic(float x) {
     x = (float)fabs(x);
-    if (x < 1.0f)
-        return (4 + x * x * (3 * x - 6)) / 6;
-    else if (x < 2.0f)
-        return (8 + x * (-12 + x * (6 - x))) / 6;
-    else
-        return 0.0f;
+    if (x < 1.0f) return (4 + x * x * (3 * x - 6)) / 6;
+    if (x < 2.0f) return (8 + x * (-12 + x * (6 - x))) / 6;
+    return 0.0f;
 }
 
 // catmull-rom filter (public domain from stb_image_resize)
 inline float filter_catmullrom(float x) {
     x = (float)fabs(x);
-    if (x < 1.0f)
-        return 1 - x * x * (2.5f - 1.5f * x);
-    else if (x < 2.0f)
-        return 2 - x * (4 + x * (0.5f * x - 2.5f));
-    else
-        return 0.0f;
+    if (x < 1.0f) return 1 - x * x * (2.5f - 1.5f * x);
+    if (x < 2.0f) return 2 - x * (4 + x * (0.5f * x - 2.5f));
+    return 0.0f;
 }
 
 // mitchell filter (public domain from stb_image_resize)
 inline float filter_mitchell(float x) {
     x = (float)fabs(x);
-    if (x < 1.0f)
-        return (16 + x * x * (21 * x - 36)) / 18;
-    else if (x < 2.0f)
-        return (32 + x * (-60 + x * (36 - 7 * x))) / 18;
-    else
-        return 0.0f;
+    if (x < 1.0f) return (16 + x * x * (21 * x - 36)) / 18;
+    if (x < 2.0f) return (32 + x * (-60 + x * (36 - 7 * x))) / 18;
+    return 0.0f;
 }
 
 // filter function
@@ -2477,23 +2507,35 @@ inline obj_scene* load_obj(const string& filename, bool load_txt,
             auto name = string();
             parse_val(ss, name);
             asset->objects.push_back(new obj_object{name, {}});
-            asset->objects.back()->groups.push_back({cur_matname, ""});
+            asset->objects.back()->groups.push_back({});
+            asset->objects.back()->groups.back().matname = cur_matname;
         } else if (cmd == "usemtl") {
             auto name = string();
             parse_val(ss, name);
             cur_matname = name;
-            asset->objects.back()->groups.push_back({cur_matname, ""});
+            asset->objects.back()->groups.push_back({});
+            asset->objects.back()->groups.back().matname = cur_matname;
         } else if (cmd == "g") {
             auto name = string();
             parse_val(ss, name);
-            asset->objects.back()->groups.push_back({cur_matname, name});
+            asset->objects.back()->groups.push_back({});
+            asset->objects.back()->groups.back().matname = cur_matname;
+            asset->objects.back()->groups.back().groupname = name;
         } else if (cmd == "s") {
             auto name = string();
             parse_val(ss, name);
-            auto smoothing = name == string("on");
-            if (asset->objects.back()->groups.back().smoothing != smoothing) {
-                asset->objects.back()->groups.push_back(
-                    {cur_matname, name, smoothing});
+            auto smoothing = (name == "on");
+            if (asset->objects.back()->groups.empty()) {
+                asset->objects.back()->groups.push_back({});
+                asset->objects.back()->groups.back().matname = cur_matname;
+                asset->objects.back()->groups.back().smoothing = smoothing;
+            } else if (asset->objects.back()->groups.back().smoothing !=
+                       smoothing) {
+                auto gname = asset->objects.back()->groups.back().groupname;
+                asset->objects.back()->groups.push_back({});
+                asset->objects.back()->groups.back().matname = cur_matname;
+                asset->objects.back()->groups.back().groupname = gname;
+                asset->objects.back()->groups.back().smoothing = smoothing;
             }
         } else if (cmd == "mtllib") {
             auto name = string();
@@ -2557,7 +2599,8 @@ inline obj_scene* load_obj(const string& filename, bool load_txt,
             asset->materials.end(), materials.begin(), materials.end());
         for (auto& txt : textures) {
             if (texture_set.find(txt) != texture_set.end()) continue;
-            asset->textures.push_back(new obj_texture{txt});
+            asset->textures.push_back(new obj_texture());
+            asset->textures.back()->path = txt;
             texture_set.insert(txt);
         }
     }
@@ -4838,10 +4881,7 @@ void save_binary_gltf(
 
     // fix string
     auto js_str = js.dump(2);
-    if (js_str.length() % 4) {
-        auto count = js_str.length() % 4;
-        for (auto c = 0; c < count; c++) js_str += " ";
-    }
+    while (js_str.length() % 4) js_str += " ";
     uint32_t json_length = (uint32_t)js_str.size();
 
     // internal buffer
@@ -5120,7 +5160,7 @@ inline scene* obj_to_scene(const obj_scene* obj, const load_options& opts) {
         mat->ks = {omat->ks.x, omat->ks.y, omat->ks.z};
         mat->kr = {omat->kr.x, omat->kr.y, omat->kr.z};
         mat->kt = {omat->kt.x, omat->kt.y, omat->kt.z};
-        mat->rs = pow(2 / (omat->ns + 2), 1 / 4.0f);
+        mat->rs = (omat->ns >= 1e6f) ? 0 : pow(2 / (omat->ns + 2), 1 / 4.0f);
         mat->op = omat->op;
         mat->ke_txt = add_texture(omat->ke_txt);
         mat->kd_txt = add_texture(omat->kd_txt);
@@ -5627,9 +5667,10 @@ inline obj_scene* scene_to_obj(const scene* scn) {
             }
         }
         for (auto quad : shp->quads) {
-            group->elems.push_back({(uint32_t)group->verts.size(),
-                obj_element_type::face, (uint16_t)((quad.z == quad.w) ? 3 : 4)});
-            if(group->elems.back().size == 3) {
+            group->elems.push_back(
+                {(uint32_t)group->verts.size(), obj_element_type::face,
+                    (uint16_t)((quad.z == quad.w) ? 3 : 4)});
+            if (group->elems.back().size == 3) {
                 for (auto vid : quad.xyz()) {
                     auto vert = obj_vertex{-1, -1, -1, -1, -1};
                     if (!shp->pos.empty()) vert.pos = offset.pos + vid;
@@ -6629,7 +6670,7 @@ inline void update_lights(scene* scn, bool point_only) {
     scn->lights.clear();
 
     for (auto ist : scn->instances) {
-        if(!ist->shp->mat) continue;
+        if (!ist->shp->mat) continue;
         if (ist->shp->mat->ke == zero3f) continue;
         if (point_only && ist->shp->points.empty()) continue;
         auto lgt = new light();
@@ -6738,24 +6779,33 @@ namespace ygl {
 
 // Make a sphere. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvsphere(
-    int usteps, int vsteps) {
+    int level, bool flipped) {
     auto quads = vector<vec4i>();
     auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
+    tie(quads, texcoord) = make_uvquads(pow2(level + 2), pow2(level + 1));
     auto pos = vector<vec3f>(texcoord.size());
     auto norm = vector<vec3f>(texcoord.size());
-    for (auto i = 0; i < texcoord.size(); i++) {
-        auto uv = texcoord[i];
-        auto a = vec2f{2 * pif * uv.x, pif * (1 - uv.y)};
-        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-        norm[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+    if (!flipped) {
+        for (auto i = 0; i < texcoord.size(); i++) {
+            auto uv = texcoord[i];
+            auto a = vec2f{2 * pif * uv.x, pif * (1 - uv.y)};
+            pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+            norm[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+        }
+    } else {
+        for (auto i = 0; i < texcoord.size(); i++) {
+            auto uv = texcoord[i];
+            auto a = vec2f{2 * pif * uv.x, pif * uv.y};
+            pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+            norm[i] = {-cos(a.x) * sin(a.y), -sin(a.x) * sin(a.y), -cos(a.y)};
+            texcoord[i] = {uv.x, 1 - uv.y};
+        }
     }
     return {quads, pos, norm, texcoord};
 }
 
 // Make a geodesic sphere.
-tuple<vector<vec3i>, vector<vec3f>, vector<vec3f>> make_geodesicsphere(
-    int level) {
+tuple<vector<vec3i>, vector<vec3f>> make_geodesicsphere(int level) {
     // https://stackoverflow.com/questions/17705621/algorithm-for-a-geodesic-sphere
     const float X = 0.525731112119133606f;
     const float Z = 0.850650808352039932f;
@@ -6776,68 +6826,42 @@ tuple<vector<vec3i>, vector<vec3f>, vector<vec3f>> make_geodesicsphere(
         pos = subdivide_vert(pos, edges, faces);
     }
     for (auto& p : pos) p = normalize(p);
-    return {triangles, pos, pos};
+    return {triangles, pos};
 }
 
 // Make a sphere. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvhemisphere(int usteps, int vsteps) {
+make_uvhemisphere(int level, bool flipped) {
     auto quads = vector<vec4i>();
     auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
+    tie(quads, texcoord) = make_uvquads(pow2(level + 2), pow2(level));
     auto pos = vector<vec3f>(texcoord.size());
     auto norm = vector<vec3f>(texcoord.size());
-    for (auto i = 0; i < texcoord.size(); i++) {
-        auto uv = texcoord[i];
-        auto a = vec2f{2 * pif * uv.x, pif * 0.5f * (1 - uv.y)};
-        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-        norm[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-    }
-    return {quads, pos, norm, texcoord};
-}
-
-// Make an inside-out sphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflippedsphere(int usteps, int vsteps) {
-    auto quads = vector<vec4i>();
-    auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
-    auto pos = vector<vec3f>(texcoord.size());
-    auto norm = vector<vec3f>(texcoord.size());
-    for (auto i = 0; i < texcoord.size(); i++) {
-        auto uv = texcoord[i];
-        auto a = vec2f{2 * pif * uv.x, pif * uv.y};
-        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-        norm[i] = {-cos(a.x) * sin(a.y), -sin(a.x) * sin(a.y), -cos(a.y)};
-        texcoord[i] = {uv.x, 1 - uv.y};
-    }
-    return {quads, pos, norm, texcoord};
-}
-
-// Make an inside-out hemisphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflippedhemisphere(int usteps, int vsteps) {
-    auto quads = vector<vec4i>();
-    auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
-    auto pos = vector<vec3f>(texcoord.size());
-    auto norm = vector<vec3f>(texcoord.size());
-    for (auto i = 0; i < texcoord.size(); i++) {
-        auto uv = texcoord[i];
-        auto a = vec2f{2 * pif * uv.x, pif * (0.5f + 0.5f * uv.y)};
-        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-        norm[i] = {-cos(a.x) * sin(a.y), -sin(a.x) * sin(a.y), -cos(a.y)};
-        texcoord[i] = {uv.x, 1 - uv.y};
+    if (!flipped) {
+        for (auto i = 0; i < texcoord.size(); i++) {
+            auto uv = texcoord[i];
+            auto a = vec2f{2 * pif * uv.x, pif * 0.5f * (1 - uv.y)};
+            pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+            norm[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+        }
+    } else {
+        for (auto i = 0; i < texcoord.size(); i++) {
+            auto uv = texcoord[i];
+            auto a = vec2f{2 * pif * uv.x, pif * (0.5f + 0.5f * uv.y)};
+            pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+            norm[i] = {-cos(a.x) * sin(a.y), -sin(a.x) * sin(a.y), -cos(a.y)};
+            texcoord[i] = {uv.x, 1 - uv.y};
+        }
     }
     return {quads, pos, norm, texcoord};
 }
 
 // Make a quad.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvquad(
-    int usteps, int vsteps) {
+    int level) {
     auto quads = vector<vec4i>();
     auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
+    tie(quads, texcoord) = make_uvquads(pow2(level), pow2(level));
     auto pos = vector<vec3f>(texcoord.size());
     auto norm = vector<vec3f>(texcoord.size());
     for (auto i = 0; i < texcoord.size(); i++) {
@@ -6862,20 +6886,46 @@ tuple<vector<vec4i>, vector<vec3f>> make_cube() {
 
 // Make a facevarying cube with unique vertices but different texture
 // coordinates.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec4i>, vector<vec2f>>
+tuple<vector<vec4i>, vector<vec3f>, vector<vec4i>, vector<vec3f>, vector<vec4i>,
+    vector<vec2f>>
 make_fvcube() {
-    static auto cube_pos =
-        vector<vec3f>{{-1, -1, -1}, {-1, +1, -1}, {+1, +1, -1}, {+1, -1, -1},
-            {-1, -1, +1}, {-1, +1, +1}, {+1, +1, +1}, {+1, -1, +1}};
-    static auto cube_qpos = vector<vec4i>{{0, 1, 2, 3}, {7, 6, 5, 4},
-        {4, 5, 1, 0}, {6, 7, 3, 2}, {2, 1, 5, 6}, {0, 3, 7, 4}};
-    static auto cube_texcoord = vector<vec2f>{{0, 0}, {1, 0}, {1, 1}, {0, 1},
-        {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0},
-        {1, 0}, {1, 1}, {0, 1}, {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}, {1, 0},
-        {1, 1}, {0, 1}};
-    static auto cube_qtexcoord = vector<vec4i>{{0, 1, 2, 3}, {4, 5, 6, 7},
+    static auto pos = vector<vec3f>{{-1, -1, -1}, {-1, +1, -1}, {+1, +1, -1},
+        {+1, -1, -1}, {-1, -1, +1}, {-1, +1, +1}, {+1, +1, +1}, {+1, -1, +1}};
+    static auto qpos = vector<vec4i>{{0, 1, 2, 3}, {7, 6, 5, 4}, {4, 5, 1, 0},
+        {6, 7, 3, 2}, {2, 1, 5, 6}, {0, 3, 7, 4}};
+    static auto norm = vector<vec3f>{{0, 0, 1}, {0, 0, 1}, {0, 0, 1}, {0, 0, 1},
+        {0, 0, -1}, {0, 0, -1}, {0, 0, -1}, {0, 0, -1}, {1, 0, 0}, {1, 0, 0},
+        {1, 0, 0}, {1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0},
+        {0, -1, 0}, {0, -1, 0}, {0, -1, 0}, {0, -1, 0}, {0, 1, 0}, {0, 1, 0},
+        {0, 1, 0}, {0, 1, 0}};
+    static auto qnorm = vector<vec4i>{{0, 1, 2, 3}, {4, 5, 6, 7},
         {8, 9, 10, 11}, {12, 13, 14, 15}, {16, 17, 18, 19}, {20, 21, 22, 23}};
-    return {cube_qpos, cube_pos, cube_qtexcoord, cube_texcoord};
+    static auto texcoord = vector<vec2f>{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0},
+        {1, 0}, {1, 1}, {0, 1}, {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}, {1, 0},
+        {1, 1}, {0, 1}, {0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}, {1, 0}, {1, 1},
+        {0, 1}};
+    static auto qtexcoord = vector<vec4i>{{0, 1, 2, 3}, {4, 5, 6, 7},
+        {8, 9, 10, 11}, {12, 13, 14, 15}, {16, 17, 18, 19}, {20, 21, 22, 23}};
+    return {qpos, pos, qnorm, norm, qtexcoord, texcoord};
+}
+
+// Make a facevarying sphere with unique vertices but different texture
+// coordinates.
+tuple<vector<vec4i>, vector<vec3f>, vector<vec4i>, vector<vec3f>, vector<vec4i>,
+    vector<vec2f>>
+make_fvsphere(int level) {
+    auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
+    auto qpos = vector<vec4i>(), qtexcoord = vector<vec4i>();
+    auto uvpos = vector<vec2f>(), texcoord = vector<vec2f>();
+    tie(qpos, uvpos) = make_uvquads(usteps, vsteps, true, false, true, true);
+    tie(qtexcoord, texcoord) = make_uvquads(usteps, vsteps);
+    auto pos = vector<vec3f>(uvpos.size());
+    for (auto i = 0; i < uvpos.size(); i++) {
+        auto uv = uvpos[i];
+        auto a = vec2f{2 * pif * uv.x, pif * (1 - uv.y)};
+        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+    }
+    return {qpos, pos, qpos, pos, qtexcoord, texcoord};
 }
 
 // Make a suzanne monkey model for testing. Note that some quads are
@@ -7306,7 +7356,7 @@ tuple<vector<vec4i>, vector<vec3f>> make_suzanne() {
 
 // Make a cube with uv. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvcube(
-    int usteps, int vsteps) {
+    int level) {
     frame3f frames[6] = {frame3f{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, 1}},
         frame3f{{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, -1}},
         frame3f{{-1, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 0}},
@@ -7316,8 +7366,7 @@ tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvcube(
     vector<vec3f> quad_pos, quad_norm;
     vector<vec2f> quad_texcoord;
     vector<vec4i> quad_quads;
-    tie(quad_quads, quad_pos, quad_norm, quad_texcoord) =
-        make_uvquad(usteps, vsteps);
+    tie(quad_quads, quad_pos, quad_norm, quad_texcoord) = make_uvquad(level);
     vector<vec3f> pos, norm;
     vector<vec2f> texcoord;
     vector<vec4i> quads;
@@ -7349,11 +7398,11 @@ tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvcube(
 
 // Make a sphere from a cube. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvspherecube(int usteps, int vsteps) {
+make_uvspherecube(int level) {
     vector<vec3f> pos, norm;
     vector<vec2f> texcoord;
     vector<vec4i> quads;
-    tie(quads, pos, norm, texcoord) = make_uvcube(usteps, vsteps);
+    tie(quads, pos, norm, texcoord) = make_uvcube(level);
     for (auto i = 0; i < pos.size(); i++) {
         pos[i] = normalize(pos[i]);
         norm[i] = normalize(pos[i]);
@@ -7363,11 +7412,11 @@ make_uvspherecube(int usteps, int vsteps) {
 
 // Make a cube than stretch it towards a sphere. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvspherizedcube(int usteps, int vsteps, float radius) {
+make_uvspherizedcube(int level, float radius) {
     vector<vec3f> pos, norm;
     vector<vec2f> texcoord;
     vector<vec4i> quads;
-    tie(quads, pos, norm, texcoord) = make_uvcube(usteps, vsteps);
+    tie(quads, pos, norm, texcoord) = make_uvcube(level);
     for (auto i = 0; i < pos.size(); i++) {
         norm[i] = normalize(pos[i]);
         pos[i] *= 1 - radius;
@@ -7379,18 +7428,18 @@ make_uvspherizedcube(int usteps, int vsteps, float radius) {
 
 // Make a flipped sphere. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflipcapsphere(int usteps, int vsteps, float radius) {
+make_uvflipcapsphere(int level, float z, bool flipped) {
     vector<vec3f> pos, norm;
     vector<vec2f> texcoord;
     vector<vec4i> quads;
-    tie(quads, pos, norm, texcoord) = make_uvsphere(usteps, vsteps);
+    tie(quads, pos, norm, texcoord) = make_uvsphere(level, flipped);
     for (auto i = 0; i < pos.size(); i++) {
-        if (pos[i].z > radius) {
-            pos[i].z = 2 * radius - pos[i].z;
+        if (pos[i].z > z) {
+            pos[i].z = 2 * z - pos[i].z;
             norm[i].x = -norm[i].x;
             norm[i].y = -norm[i].y;
-        } else if (pos[i].z < -radius) {
-            pos[i].z = -2 * radius - pos[i].z;
+        } else if (pos[i].z < -z) {
+            pos[i].z = -2 * z - pos[i].z;
             norm[i].x = -norm[i].x;
             norm[i].y = -norm[i].y;
         }
@@ -7400,44 +7449,36 @@ make_uvflipcapsphere(int usteps, int vsteps, float radius) {
 
 // Make a cutout sphere. This is not watertight.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvcutsphere(int usteps, int vsteps, float radius) {
+make_uvcutsphere(int level, float z, bool flipped) {
     auto quads = vector<vec4i>();
     auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
+    tie(quads, texcoord) = make_uvquads(pow2(level + 2), pow2(level + 1));
     auto pos = vector<vec3f>(texcoord.size());
     auto norm = vector<vec3f>(texcoord.size());
-    for (auto i = 0; i < texcoord.size(); i++) {
-        auto uv = texcoord[i];
-        auto p = 1 - acos(radius) / pif;
-        auto a = vec2f{2 * pif * uv.x, pif * (1 - p * uv.y)};
-        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-        norm[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+    if (!flipped) {
+        for (auto i = 0; i < texcoord.size(); i++) {
+            auto uv = texcoord[i];
+            auto p = 1 - acos(z) / pif;
+            auto a = vec2f{2 * pif * uv.x, pif * (1 - p * uv.y)};
+            pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+            norm[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+        }
+    } else {
+        for (auto i = 0; i < texcoord.size(); i++) {
+            auto uv = texcoord[i];
+            auto p = 1 - acos(z) / pif;
+            auto a = vec2f{2 * pif * uv.x, pif * ((1 - p) + p * uv.y)};
+            pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
+            norm[i] = {-cos(a.x) * sin(a.y), -sin(a.x) * sin(a.y), -cos(a.y)};
+            texcoord[i] = {uv.x, (1 - uv.y)};
+        }
     }
     return {quads, pos, norm, texcoord};
 }
 
-// Make a flipped and cut sphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflippedcutsphere(int usteps, int vsteps, float radius) {
-    auto quads = vector<vec4i>();
-    auto texcoord = vector<vec2f>();
-    tie(quads, texcoord) = make_uvquads(usteps, vsteps);
-    auto pos = vector<vec3f>(texcoord.size());
-    auto norm = vector<vec3f>(texcoord.size());
-    for (auto i = 0; i < texcoord.size(); i++) {
-        auto uv = texcoord[i];
-        auto p = 1 - acos(radius) / pif;
-        auto a = vec2f{2 * pif * uv.x, pif * ((1 - p) + p * uv.y)};
-        pos[i] = {cos(a.x) * sin(a.y), sin(a.x) * sin(a.y), cos(a.y)};
-        norm[i] = {-cos(a.x) * sin(a.y), -sin(a.x) * sin(a.y), -cos(a.y)};
-        texcoord[i] = {uv.x, (1 - uv.y)};
-    }
-    return {quads, pos, norm, texcoord};
-}
-
-/// Make a hair ball around a shape
+// Make a hair ball around a shape
 tuple<vector<vec2i>, vector<vec3f>, vector<vec3f>, vector<vec2f>, vector<float>>
-make_hair(int num, int usteps, const vec2f& len, const vec2f& rad,
+make_hair(int num, int level, const vec2f& len, const vec2f& rad,
     const vector<vec3i>& striangles, const vector<vec4i>& squads,
     const vector<vec3f>& spos, const vector<vec3f>& snorm,
     const vector<vec2f>& stexcoord, const vec2f& noise, const vec2f& clump,
@@ -7468,9 +7509,10 @@ make_hair(int num, int usteps, const vec2f& len, const vec2f& rad,
         }
     }
 
+    auto usteps = pow2(level);
     auto lines = vector<vec2i>();
     auto texcoord = vector<vec2f>();
-    tie(lines, texcoord) = make_lines(num, usteps);
+    tie(lines, texcoord) = make_uvlines(num, usteps);
     auto pos = vector<vec3f>(texcoord.size());
     auto norm = vector<vec3f>(texcoord.size());
     auto radius = vector<float>(texcoord.size());
@@ -7539,7 +7581,7 @@ scene* make_cornell_box_scene() {
         auto shp = new shape();
         shp->mat = mat;
         shp->name = name;
-        tie(shp->quads, shp->pos, shp->norm, shp->texcoord) = make_uvquad(1, 1);
+        tie(shp->quads, shp->pos, shp->norm, shp->texcoord) = make_uvquad(0);
         for (auto& p : shp->pos) p *= scale;
         return shp;
     };
@@ -7548,7 +7590,7 @@ scene* make_cornell_box_scene() {
         auto shp = new shape();
         shp->mat = mat;
         shp->name = name;
-        tie(shp->quads, shp->pos, shp->norm, shp->texcoord) = make_uvcube(1, 1);
+        tie(shp->quads, shp->pos, shp->norm, shp->texcoord) = make_uvcube(0);
         for (auto& p : shp->pos) p *= scale;
         return shp;
     };
@@ -7602,7 +7644,7 @@ scene* make_cornell_box_scene() {
 // Make standard shape. Public API described above.
 //
 inline tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvhollowcutsphere(int usteps, int vsteps, float radius) {
+make_uvhollowcutsphere(int level, float radius) {
     auto quads = vector<vec4i>();
     auto pos = vector<vec3f>();
     auto norm = vector<vec3f>();
@@ -7614,8 +7656,7 @@ make_uvhollowcutsphere(int usteps, int vsteps, float radius) {
     vector<vec2i> _aux1;
     vector<vec3i> _aux2;
 
-    tie(mquads, mpos, mnorm, mtexcoord) =
-        make_uvcutsphere(usteps, vsteps, radius);
+    tie(mquads, mpos, mnorm, mtexcoord) = make_uvcutsphere(level, radius);
     for (auto& uv : mtexcoord) uv.y *= radius;
     tie(_aux1, _aux2, quads) =
         merge_elems((int)pos.size(), {}, {}, quads, {}, {}, mquads);
@@ -7623,8 +7664,7 @@ make_uvhollowcutsphere(int usteps, int vsteps, float radius) {
     norm += mnorm;
     texcoord += mtexcoord;
 
-    tie(mquads, mpos, mnorm, mtexcoord) =
-        make_uvflippedcutsphere(usteps, vsteps, radius);
+    tie(mquads, mpos, mnorm, mtexcoord) = make_uvcutsphere(level, radius, true);
     for (auto& p : mpos) p *= radius;
     tie(_aux1, _aux2, quads) =
         merge_elems((int)pos.size(), {}, {}, quads, {}, {}, mquads);
@@ -7635,7 +7675,7 @@ make_uvhollowcutsphere(int usteps, int vsteps, float radius) {
     // dpdu = [- s r s0 s1, s r c0 s1, 0] === [- s0, c0, 0]
     // dpdv = [s c0 s1, s s0 s1, s c1] === [c0 s1, s0 s1, c1]
     // n = [c0 c1, - s0 c1, s1]
-    tie(mquads, mtexcoord) = make_uvquads(usteps, vsteps);
+    tie(mquads, mtexcoord) = make_uvquads(pow2(level + 2), pow2(level + 1));
     mpos.resize(mtexcoord.size());
     mnorm.resize(mtexcoord.size());
     for (auto i = 0; i < mtexcoord.size(); i++) {
@@ -7659,7 +7699,7 @@ make_uvhollowcutsphere(int usteps, int vsteps, float radius) {
 // Make standard shape. Public API described above.
 //
 inline tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvhollowcutsphere1(int usteps, int vsteps, float radius) {
+make_uvhollowcutsphere1(int level, float radius) {
     auto quads = vector<vec4i>();
     auto pos = vector<vec3f>();
     auto norm = vector<vec3f>();
@@ -7671,10 +7711,10 @@ make_uvhollowcutsphere1(int usteps, int vsteps, float radius) {
     vector<vec2i> _aux1;
     vector<vec3i> _aux2;
 
-    tie(mquads, mpos, mnorm, mtexcoord) =
-        make_uvcutsphere(usteps, vsteps, radius);
+    tie(mquads, mpos, mnorm, mtexcoord) = make_uvcutsphere(level, radius);
     for (auto& uv : mtexcoord) uv.y *= radius;
-    for (auto i = (usteps + 1) * vsteps; i < mnorm.size(); i++)
+    for (auto i = (pow2(level + 2) + 1) * pow2(level + 1); i < mnorm.size();
+         i++)
         mnorm[i] = normalize(mnorm[i] + vec3f{0, 0, 1});
     tie(_aux1, _aux2, quads) =
         merge_elems((int)pos.size(), {}, {}, quads, {}, {}, mquads);
@@ -7683,7 +7723,7 @@ make_uvhollowcutsphere1(int usteps, int vsteps, float radius) {
     texcoord += mtexcoord;
 
     tie(mquads, mpos, mnorm, mtexcoord) =
-        make_uvflippedcutsphere(usteps, vsteps, radius * 1.05f);
+        make_uvcutsphere(level, radius * 1.05f, true);
     for (auto& p : mpos) p *= 0.8f;
     tie(_aux1, _aux2, quads) =
         merge_elems((int)pos.size(), {}, {}, quads, {}, {}, mquads);
@@ -7691,7 +7731,7 @@ make_uvhollowcutsphere1(int usteps, int vsteps, float radius) {
     norm += mnorm;
     texcoord += mtexcoord;
 
-    tie(mquads, mtexcoord) = make_uvquads(usteps, vsteps / 4);
+    tie(mquads, mtexcoord) = make_uvquads(pow2(level + 2), pow2(level + 1) / 4);
     mpos.resize(mtexcoord.size());
     mnorm.resize(mtexcoord.size());
     for (auto i = 0; i < mtexcoord.size(); i++) {
@@ -7704,7 +7744,7 @@ make_uvhollowcutsphere1(int usteps, int vsteps, float radius) {
         mnorm[i] = {-cos(a[0]) * sin(a[1]), -sin(a[0]) * sin(a[1]), cos(a[1])};
         mtexcoord[i] = {uv[0], radius + (1 - radius) * uv[1]};
     }
-    for (auto i = 0; i < (usteps + 1); i++)
+    for (auto i = 0; i < (pow2(level + 2) + 1); i++)
         mnorm[i] = normalize(mnorm[i] + vec3f{0, 0, 1});
     tie(_aux1, _aux2, quads) =
         merge_elems((int)pos.size(), {}, {}, quads, {}, {}, mquads);
@@ -7854,6 +7894,8 @@ enum struct test_material_type {
     light_area,
     light_areal,
     light_arear,
+    light_areat,
+    light_areaf,
 };
 
 inline const vector<pair<string, test_material_type>>& test_material_names() {
@@ -7880,6 +7922,8 @@ inline const vector<pair<string, test_material_type>>& test_material_names() {
         {"light_area", test_material_type::light_area},
         {"light_areal", test_material_type::light_areal},
         {"light_arear", test_material_type::light_arear},
+        {"light_areat", test_material_type::light_areat},
+        {"light_areaf", test_material_type::light_areaf},
     };
 
     return names;
@@ -7974,13 +8018,19 @@ inline material* add_test_material(scene* scn, test_material_type type) {
             mat->ke = {400, 400, 400};
         } break;
         case test_material_type::light_area: {
-            mat->ke = {80, 80, 80};
+            mat->ke = {40, 40, 40};
         } break;
         case test_material_type::light_arear: {
             mat->ke = {80, 80, 80};
         } break;
         case test_material_type::light_areal: {
             mat->ke = {20, 20, 20};
+        } break;
+        case test_material_type::light_areat: {
+            mat->ke = {10, 10, 10};
+        } break;
+        case test_material_type::light_areaf: {
+            mat->ke = {40, 40, 40};
         } break;
         default: throw runtime_error("bad value");
     }
@@ -8006,8 +8056,8 @@ enum struct test_shape_type {
     cubefv,
     cubefvs,
     quads,
-    matball1,
-    matball2,
+    spherefv,
+    matball,
     matballi,
     points,
     lines1,
@@ -8016,8 +8066,8 @@ enum struct test_shape_type {
     linesi,
     plight,
     alight,
-    alightl,
-    alightr,
+    alightt,
+    alightf,
 };
 
 inline const vector<pair<string, test_shape_type>>& test_shape_names() {
@@ -8040,8 +8090,8 @@ inline const vector<pair<string, test_shape_type>>& test_shape_names() {
         {"cubefv", test_shape_type::cubefv},
         {"cubefvs", test_shape_type::cubefvs},
         {"quads", test_shape_type::quads},
-        {"matball1", test_shape_type::matball1},
-        {"matball2", test_shape_type::matball2},
+        {"spherefv", test_shape_type::spherefv},
+        {"matball", test_shape_type::matball},
         {"matballi", test_shape_type::matballi},
         {"points", test_shape_type::points},
         {"lines1", test_shape_type::lines1},
@@ -8050,8 +8100,8 @@ inline const vector<pair<string, test_shape_type>>& test_shape_names() {
         {"linesi", test_shape_type::linesi},
         {"plight", test_shape_type::plight},
         {"alight", test_shape_type::alight},
-        {"alightl", test_shape_type::alightl},
-        {"alightr", test_shape_type::alightr},
+        {"alightt", test_shape_type::alightt},
+        {"alightf", test_shape_type::alightf},
     };
     return names;
 }
@@ -8073,10 +8123,8 @@ inline shape* add_test_shape(
     scn->shapes += shp;
     switch (stype) {
         case test_shape_type::floor: {
-            auto level = 6;
-            auto usteps = pow2(level), vsteps = pow2(level);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvquad(usteps, vsteps);
+                make_uvquad(6);
             for (auto& p : shp->pos) p = {-p.x, p.z, p.y};
             for (auto& n : shp->norm) n = {n.x, n.z, n.y};
             for (auto& p : shp->pos) p *= 20;
@@ -8084,54 +8132,39 @@ inline shape* add_test_shape(
         } break;
         case test_shape_type::quad: {
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvquad(1, 1);
+                make_uvquad(0);
         } break;
         case test_shape_type::cube: {
-            auto level = 0;
-            auto usteps = pow2(level), vsteps = pow2(level);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvcube(usteps, vsteps);
+                make_uvcube(0);
         } break;
         case test_shape_type::sphere: {
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvsphere(usteps, vsteps);
+                make_uvsphere(5);
         } break;
         case test_shape_type::spherecube: {
-            auto level = 4;
-            auto usteps = pow2(level), vsteps = pow2(level);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvspherecube(usteps, vsteps);
+                make_uvspherecube(4);
         } break;
         case test_shape_type::spherizedcube: {
-            auto level = 4;
-            auto usteps = pow2(level), vsteps = pow2(level);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvspherizedcube(usteps, vsteps, 0.75f);
+                make_uvspherizedcube(4, 0.75f);
         } break;
         case test_shape_type::flipcapsphere: {
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvflipcapsphere(usteps, vsteps, 0.75f);
+                make_uvflipcapsphere(5, 0.75f);
             // for (auto& uv : shp->texcoord) uv *= uvscale;
         } break;
         case test_shape_type::geosphere: {
-            auto level = 5;
-            tie(shp->triangles, shp->pos, shp->norm) =
-                make_geodesicsphere(level);
+            tie(shp->triangles, shp->pos) = make_geodesicsphere(5);
+            shp->norm = shp->pos;
         } break;
         case test_shape_type::geospheref: {
-            auto level = 5;
-            tie(shp->triangles, shp->pos, shp->norm) =
-                make_geodesicsphere(level);
+            tie(shp->triangles, shp->pos) = make_geodesicsphere(5);
             facet_shape(shp);
         } break;
         case test_shape_type::geospherel: {
-            auto level = 4;
-            tie(shp->triangles, shp->pos, shp->norm) =
-                make_geodesicsphere(level);
+            tie(shp->triangles, shp->pos) = make_geodesicsphere(4);
             facet_shape(shp);
         } break;
         case test_shape_type::cubep: {
@@ -8149,40 +8182,40 @@ inline shape* add_test_shape(
             for (auto i = 0; i < 2; i++) subdivide_shape(shp, true);
         } break;
         case test_shape_type::cubefv: {
-            tie(shp->quads_pos, shp->pos, shp->quads_texcoord, shp->texcoord) =
-                make_fvcube();
+            tie(shp->quads_pos, shp->pos, shp->quads_norm, shp->norm,
+                shp->quads_texcoord, shp->texcoord) = make_fvcube();
         } break;
         case test_shape_type::cubefvs: {
-            tie(shp->quads_pos, shp->pos, shp->quads_texcoord, shp->texcoord) =
-                make_fvcube();
+            tie(shp->quads_pos, shp->pos, shp->quads_norm, shp->norm,
+                shp->quads_texcoord, shp->texcoord) = make_fvcube();
             for (auto l = 0; l < 4; l++) subdivide_shape(shp, true);
         } break;
         case test_shape_type::quads: {
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvquad(1, 1);
+                make_uvquad(0);
             for (auto i = 0; i < 4; i++) subdivide_shape(shp, true);
         } break;
-        case test_shape_type::matball1: {
+        case test_shape_type::spherefv: {
+            tie(shp->quads_pos, shp->pos, shp->quads_norm, shp->norm,
+                shp->quads_texcoord, shp->texcoord) = make_fvsphere(4);
+        } break;
+        case test_shape_type::matball: {
+            tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
+                make_uvflipcapsphere(5, 0.75f);
+#if 0
             auto level = 6;
             auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
                 make_uvhollowcutsphere(usteps, vsteps, 0.75f);
-        } break;
-        case test_shape_type::matball2: {
-            auto level = 6;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
-            tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvhollowcutsphere1(usteps, vsteps, 0.75f);
+#endif
         } break;
         case test_shape_type::matballi: {
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvsphere(usteps, vsteps);
+                make_uvsphere(5);
             for (auto& p : shp->pos) p *= 0.8f;
         } break;
         case test_shape_type::points: {
-            tie(shp->points, shp->texcoord) = make_points(64 * 64 * 16);
+            tie(shp->points, shp->texcoord) = make_uvpoints(64 * 64 * 16);
             shp->pos.reserve(shp->texcoord.size());
             shp->norm.resize(shp->texcoord.size(), {0, 0, 1});
             shp->radius.resize(shp->texcoord.size(), 0.0025f);
@@ -8195,43 +8228,35 @@ inline shape* add_test_shape(
         case test_shape_type::lines1: {
             auto nhairs = 65536;
             // auto nhairs = 32768;
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvspherecube(usteps, vsteps);
+                make_uvspherecube(5);
             tie(shp->lines, shp->pos, shp->norm, shp->texcoord, shp->radius) =
-                make_hair(nhairs, 4, {0.1f, 0.1f}, {0.001f, 0.0001f}, {},
+                make_hair(nhairs, 2, {0.1f, 0.1f}, {0.001f, 0.0001f}, {},
                     shp->quads, shp->pos, shp->norm, shp->texcoord, {0.5f, 8});
             shp->quads.clear();
         } break;
         case test_shape_type::lines2: {
             auto nhairs = 65536;
             // auto nhairs = 32768;
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvspherecube(usteps, vsteps);
+                make_uvspherecube(5);
             tie(shp->lines, shp->pos, shp->norm, shp->texcoord, shp->radius) =
-                make_hair(nhairs, 4, {0.1f, 0.1f}, {0.001f, 0.0001f}, {},
+                make_hair(nhairs, 2, {0.1f, 0.1f}, {0.001f, 0.0001f}, {},
                     shp->quads, shp->pos, shp->norm, shp->texcoord, {},
                     {0.5f, 128});
             shp->quads.clear();
         } break;
         case test_shape_type::lines3: {
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvspherecube(usteps, vsteps);
+                make_uvspherecube(4);
             tie(shp->lines, shp->pos, shp->norm, shp->texcoord, shp->radius) =
-                make_hair(16384, 4, {0.1f, 0.1f}, {0.01f, 0.0001f}, {},
+                make_hair(16384, 2, {0.1f, 0.1f}, {0.01f, 0.0001f}, {},
                     shp->quads, shp->pos, shp->norm, shp->texcoord);
             shp->quads.clear();
         } break;
         case test_shape_type::linesi: {
-            auto level = 5;
-            auto usteps = pow2(level + 2), vsteps = pow2(level + 1);
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvsphere(usteps, vsteps);
+                make_uvsphere(5);
         } break;
         case test_shape_type::plight: {
             shp->points.push_back(0);
@@ -8241,18 +8266,18 @@ inline shape* add_test_shape(
         } break;
         case test_shape_type::alight: {
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvquad(1, 1);
-            for (auto& p : shp->points) p *= 2;
+                make_uvquad(0);
+            for (auto& p : shp->pos) p *= 2;
         } break;
-        case test_shape_type::alightr: {
+        case test_shape_type::alightt: {
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvquad(1, 1);
-            for (auto& p : shp->points) p *= 2;
+                make_uvquad(0);
+            for (auto& p : shp->pos) p *= 16;
         } break;
-        case test_shape_type::alightl: {
+        case test_shape_type::alightf: {
             tie(shp->quads, shp->pos, shp->norm, shp->texcoord) =
-                make_uvquad(1, 1);
-            for (auto& p : shp->points) p *= 2;
+                make_uvquad(0);
+            for (auto& p : shp->pos) p *= 16;
         } break;
         default: throw runtime_error("bad value");
     }
@@ -8345,44 +8370,39 @@ inline const vector<pair<string, test_light_type>>& test_light_names() {
 
 tuple<vector<instance*>, environment*> add_test_lights(
     scene* scn, test_light_type type) {
-    if (type == test_light_type::none) return {{}, nullptr};
+    auto ists = vector<instance*>{};
+    auto env = (environment*)nullptr;
     switch (type) {
+        case test_light_type::none: break;
         case test_light_type::pointlight: {
-            return {{add_test_instance(scn, test_shape_type::plight,
-                         test_material_type::light_point, {-2, 10, 8}),
-                        add_test_instance(scn, test_shape_type::plight,
-                            test_material_type::light_point, {+2, 10, 8})},
-                nullptr};
+            ists.push_back(add_test_instance(scn, test_shape_type::plight,
+                test_material_type::light_point, {-2, 10, 8}));
+            ists.push_back(add_test_instance(scn, test_shape_type::plight,
+                test_material_type::light_point, {+2, 10, 8}));
         } break;
         case test_light_type::arealight: {
-            return {
-                {add_test_instance(scn, test_shape_type::alight,
-                     test_material_type::light_area,
-                     lookat_frame3f({-4, 5, 8}, {0, 3, 0}, {0, 1, 0}, true)),
-                    add_test_instance(scn, test_shape_type::alight,
-                        test_material_type::light_area,
-                        lookat_frame3f(
-                            {+4, 5, 8}, {0, 3, 0}, {0, 1, 0}, true))},
-                nullptr};
+            ists.push_back(add_test_instance(scn, test_shape_type::alight,
+                test_material_type::light_area,
+                lookat_frame3f({-4, 5, 8}, {0, 3, 0}, {0, 1, 0}, true)));
+            ists.push_back(add_test_instance(scn, test_shape_type::alight,
+                test_material_type::light_area,
+                lookat_frame3f({+4, 5, 8}, {0, 3, 0}, {0, 1, 0}, true)));
         } break;
         case test_light_type::arealight1: {
-            return {
-                {add_test_instance(scn, test_shape_type::alightr,
-                     test_material_type::light_arear,
-                     lookat_frame3f({+4, 10, 8}, {0, 3, 0}, {0, 1, 0}, true)),
-                    add_test_instance(scn, test_shape_type::alightl,
-                        test_material_type::light_areal,
-                        lookat_frame3f(
-                            {-8, 5, 0}, {0, 3, 0}, {0, 1, 0}, true))},
-                nullptr};
+            ists.push_back(add_test_instance(scn, test_shape_type::alightt,
+                test_material_type::light_areat,
+                lookat_frame3f({0, 64, 0}, {0, 1, 0}, {0, 0, 1}, true)));
+            ists.push_back(add_test_instance(scn, test_shape_type::alightf,
+                test_material_type::light_areaf,
+                lookat_frame3f({0, 64, 64}, {0, 1, 0}, {0, 1, 0}, true)));
         } break;
         case test_light_type::envlight: {
-            return {
-                {}, add_test_environment(scn, test_environment_type::sky1,
-                        lookat_frame3f({0, 1, 0}, {0, 1, 1}, {0, 1, 0}, true))};
+            env = add_test_environment(scn, test_environment_type::sky1,
+                lookat_frame3f({0, 1, 0}, {0, 1, 1}, {0, 1, 0}, true));
         } break;
         default: throw runtime_error("bad value");
     }
+    return tuple<vector<instance*>, environment*>{ists, env};
 }
 
 enum struct test_camera_type { none, cam1, cam2, cam3 };
@@ -8420,9 +8440,9 @@ camera* add_test_camera(scene* scn, test_camera_type type) {
             cam->aspect = 16.0f / 9.0f;
         } break;
         case test_camera_type::cam3: {
-            cam->frame = lookat_frame3f({0, 4.8f, 12}, {0, 1, 0}, {0, 1, 0});
-            cam->focus = length(vec3f{0, 4.8f, 12} - vec3f{0, 1, 0});
-            cam->yfov = 15 * pif / 180;
+            cam->frame = lookat_frame3f({0, 6, 24}, {0, 1, 0}, {0, 1, 0});
+            cam->focus = length(vec3f{0, 6, 24} - vec3f{0, 1, 0});
+            cam->yfov = 7.5f * pif / 180;
             cam->aperture = 0;
             cam->aspect = 2.35f / 1.0f;  // widescreen cinema
         } break;
@@ -8435,6 +8455,7 @@ scene* make_simple_test_scene(test_camera_type ctype,
     const vector<pair<test_shape_type, test_material_type>>& otypes,
     test_light_type ltype,
     const vector<pair<test_shape_type, test_material_type>>& itypes = {},
+    bool rotate = false,
     test_material_type fmat = test_material_type::matte_grid) {
     auto scn = new scene();
     add_test_camera(scn, ctype);
@@ -8444,19 +8465,22 @@ scene* make_simple_test_scene(test_camera_type ctype,
         add_test_instance(scn, test_shape_type::floor, fmat, identity_frame3f);
     }
 
-    auto pos1 = vector<float>{0};
-    auto pos2 = vector<float>{-1.25f, +1.25f};
-    auto pos3 = vector<float>{-2.50f, 0, +2.50f};
-    auto pos = pos1;
-    if (otypes.size() == 2) pos = pos2;
-    if (otypes.size() == 3) pos = pos3;
+    auto frames = std::vector<frame3f>{
+        identity_frame3f, identity_frame3f, identity_frame3f};
+    for (auto fi : enumerate(frames)) {
+        auto& f = fi.second;
+        if (otypes.size() == 2) f.o.x = vector<float>{-1.25f, +1.25f}[fi.first];
+        if (otypes.size() == 3)
+            f.o.x = vector<float>{-2.50f, 0, +2.50f}[fi.first];
+        f.o.y = 1;
+        if (rotate)
+            f = lookat_frame3f(f.o, f.o + vec3f{1, 1, 1}, {0, 1, 0}, true);
+    }
 
     for (auto i : range(otypes.size())) {
-        add_test_instance(
-            scn, otypes[i].first, otypes[i].second, {pos[i], 1, 0});
+        add_test_instance(scn, otypes[i].first, otypes[i].second, frames[i]);
         if (itypes.empty()) continue;
-        add_test_instance(
-            scn, itypes[i].first, itypes[i].second, {pos[i], 1, 0});
+        add_test_instance(scn, itypes[i].first, itypes[i].second, frames[i]);
     }
 
     return scn;
@@ -8525,8 +8549,8 @@ scene* make_test_scene(test_scene_type otype) {
                      test_shape_type::geospheref, test_shape_type::cubes,
                      test_shape_type::suzanne, test_shape_type::suzannes,
                      test_shape_type::cubefv, test_shape_type::cubefvs,
-                     test_shape_type::quads, test_shape_type::matball1,
-                     test_shape_type::matball2, test_shape_type::matballi})
+                     test_shape_type::quads, test_shape_type::spherefv,
+                     test_shape_type::matball, test_shape_type::matballi})
                 add_test_shape(scn, stype, test_material_type::none);
             return scn;
         } break;
@@ -8535,6 +8559,14 @@ scene* make_test_scene(test_scene_type otype) {
         } break;
         case test_scene_type::instancel_pl: {
             return make_instance_scene({100, 100}, {{-3, -3}, {3, 3}});
+        } break;
+        case test_scene_type::plane_al: {
+            return make_simple_test_scene(
+                test_camera_type::cam3, {}, test_light_type::arealight);
+        } break;
+        case test_scene_type::nothing_el: {
+            return make_simple_test_scene(test_camera_type::cam3, {},
+                test_light_type::envlight, {}, false, test_material_type::none);
         } break;
         case test_scene_type::basic_pl: {
             return make_simple_test_scene(test_camera_type::cam3,
@@ -8570,7 +8602,7 @@ scene* make_test_scene(test_scene_type otype) {
                     {test_shape_type::spherizedcube,
                         test_material_type::plastic_colored},
                 },
-                test_light_type::arealight);
+                test_light_type::arealight1);
         } break;
         case test_scene_type::simple_el: {
             return make_simple_test_scene(test_camera_type::cam3,
@@ -8584,7 +8616,7 @@ scene* make_test_scene(test_scene_type otype) {
                 },
                 test_light_type::envlight);
         } break;
-        case test_scene_type::transparent_pl: {
+        case test_scene_type::transparent_al: {
             return make_simple_test_scene(test_camera_type::cam3,
                 {
                     {test_shape_type::quad,
@@ -8594,32 +8626,32 @@ scene* make_test_scene(test_scene_type otype) {
                     {test_shape_type::quad,
                         test_material_type::transparent_blue},
                 },
-                test_light_type::pointlight);
+                test_light_type::arealight1);
         } break;
-        case test_scene_type::points_pl: {
+        case test_scene_type::points_al: {
             return make_simple_test_scene(test_camera_type::cam3,
                 {
                     {test_shape_type::points, test_material_type::matte_gray},
                     {test_shape_type::points, test_material_type::matte_gray},
                     {test_shape_type::points, test_material_type::matte_gray},
                 },
-                test_light_type::pointlight);
+                test_light_type::arealight);
         } break;
-        case test_scene_type::lines_pl: {
+        case test_scene_type::lines_al: {
             return make_simple_test_scene(test_camera_type::cam3,
                 {
                     {test_shape_type::lines1, test_material_type::matte_gray},
                     {test_shape_type::lines2, test_material_type::matte_gray},
                     {test_shape_type::lines2, test_material_type::matte_gray},
                 },
-                test_light_type::pointlight,
+                test_light_type::arealight1,
                 {
                     {test_shape_type::linesi, test_material_type::matte_gray},
                     {test_shape_type::linesi, test_material_type::matte_gray},
                     {test_shape_type::linesi, test_material_type::matte_gray},
                 });
         } break;
-        case test_scene_type::subdiv_pl: {
+        case test_scene_type::subdiv_al: {
             return make_simple_test_scene(test_camera_type::cam3,
                 {
                     {test_shape_type::cubes, test_material_type::plastic_red},
@@ -8628,25 +8660,65 @@ scene* make_test_scene(test_scene_type otype) {
                     {test_shape_type::suzannes,
                         test_material_type::plastic_blue},
                 },
-                test_light_type::pointlight);
+                test_light_type::arealight1);
         } break;
-        case test_scene_type::matball1_al: {
-            return make_simple_test_scene(test_camera_type::cam1,
+        case test_scene_type::plastics_al: {
+            return make_simple_test_scene(test_camera_type::cam3,
                 {
-                    {test_shape_type::matball1,
-                        test_material_type::plastic_red},
+                    {test_shape_type::matball, test_material_type::matte_green},
+                    {test_shape_type::matball,
+                        test_material_type::plastic_green},
+                    {test_shape_type::matball,
+                        test_material_type::plastic_colored},
                 },
                 test_light_type::arealight1,
-                {{test_shape_type::matballi, test_material_type::matte_gray}});
+                {{test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi,
+                        test_material_type::matte_gray}});
         } break;
-        case test_scene_type::matball1_el: {
-            return make_simple_test_scene(test_camera_type::cam1,
+        case test_scene_type::plastics_el: {
+            return make_simple_test_scene(test_camera_type::cam3,
                 {
-                    {test_shape_type::matball1,
-                        test_material_type::plastic_red},
+                    {test_shape_type::matball, test_material_type::matte_green},
+                    {test_shape_type::matball,
+                        test_material_type::plastic_green},
+                    {test_shape_type::matball,
+                        test_material_type::plastic_colored},
                 },
                 test_light_type::envlight,
-                {{test_shape_type::matballi, test_material_type::matte_gray}});
+                {{test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi,
+                        test_material_type::matte_gray}});
+        } break;
+        case test_scene_type::metals_al: {
+            return make_simple_test_scene(test_camera_type::cam3,
+                {
+                    {test_shape_type::matball, test_material_type::gold_rough},
+                    {test_shape_type::matball, test_material_type::gold_mirror},
+                    {test_shape_type::matball,
+                        test_material_type::silver_mirror},
+                },
+                test_light_type::arealight1,
+                {{test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi,
+                        test_material_type::matte_gray}});
+        } break;
+        case test_scene_type::metals_el: {
+            return make_simple_test_scene(test_camera_type::cam3,
+                {
+                    {test_shape_type::matball, test_material_type::gold_rough},
+                    {test_shape_type::matball, test_material_type::gold_mirror},
+                    {test_shape_type::matball,
+                        test_material_type::silver_mirror},
+                },
+                test_light_type::envlight,
+                {{test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi, test_material_type::matte_gray},
+                    {test_shape_type::matballi,
+                        test_material_type::matte_gray}});
         } break;
         case test_scene_type::tesselation_pl: {
             return make_simple_test_scene(test_camera_type::cam3,
@@ -9918,7 +9990,7 @@ gl_window* make_window(
 
 // init gl extensions
 #ifndef __APPLE__
-    if (!glewInit()) return nullptr;
+    if (glewInit() != GLEW_OK) return nullptr;
 #endif
     return win;
 }
@@ -10145,6 +10217,11 @@ bool draw_value_widget(gl_window* win, const string& lbl, float* val, int ncomp,
 // Color widget
 bool draw_color_widget(gl_window* win, const string& lbl, vec4f& val) {
     return ImGui::ColorEdit4(lbl.c_str(), (float*)&val.x);
+}
+
+// Color widget
+bool draw_color_widget(gl_window* win, const string& lbl, vec3f& val) {
+    return ImGui::ColorEdit3(lbl.c_str(), (float*)&val.x);
 }
 
 // Color widget
@@ -10420,7 +10497,7 @@ inline bool draw_elem_widgets(gl_window* win, scene* scn, texture* txt,
 inline bool draw_elem_widgets(gl_window* win, scene* scn, material* mat,
     void*& selection, const unordered_map<texture*, gl_texture>& gl_txt) {
     static auto mtype_names = vector<pair<string, material_type>>{
-        {"generic", material_type::specular_roughness},
+        {"specular_roughness", material_type::specular_roughness},
         {"metallic_roughness", material_type::metallic_roughness},
         {"specular_glossiness", material_type::specular_glossiness},
     };
@@ -10432,11 +10509,15 @@ inline bool draw_elem_widgets(gl_window* win, scene* scn, material* mat,
     draw_separator_widget(win);
     draw_label_widget(win, "name", mat->name);
     edited += draw_value_widget(win, "mtype", mat->mtype, mtype_names);
-    edited += draw_value_widget(win, "ke", mat->ke, 0, 1000);
-    edited += draw_value_widget(win, "kd", mat->kd, 0, 1);
-    edited += draw_value_widget(win, "ks", mat->ks, 0, 1);
-    edited += draw_value_widget(win, "kt", mat->kt, 0, 1);
-    edited += draw_value_widget(win, "rs", mat->rs, 0, 1);
+    auto ke_l = max_element(mat->ke).second;
+    auto ke_c = (ke_l) ? mat->ke / ke_l : zero3f;
+    edited += draw_value_widget(win, "ke l", ke_l, 0, 100);
+    edited += draw_color_widget(win, "ke", ke_c);
+    mat->ke = ke_l * ke_c;
+    edited += draw_color_widget(win, "kd", mat->kd);
+    edited += draw_color_widget(win, "ks", mat->ks);
+    edited += draw_color_widget(win, "kt", mat->kt);
+    edited += draw_value_widget(win, "rs", mat->rs);
 
     auto txt_widget = [&txt_names](gl_window* win, const string& lbl,
                           texture_info& info) {
@@ -10489,7 +10570,7 @@ inline bool draw_elem_widgets(gl_window* win, scene* scn, camera* cam,
     edited += draw_value_widget(win, "yfov", cam->yfov, 0.1, 4);
     edited += draw_value_widget(win, "aspect", cam->aspect, 0.1, 4);
     edited += draw_value_widget(win, "focus", cam->focus, 0.01, 10);
-    edited += draw_value_widget(win, "aperture", cam->aperture, 0, 1);
+    edited += draw_value_widget(win, "aperture", cam->aperture);
     return std::any_of(edited.begin(), edited.end(), [](auto x) { return x; });
 }
 

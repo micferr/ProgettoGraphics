@@ -78,7 +78,8 @@
 /// ## Compilation
 ///
 /// Yocto/GL is written in C++14, with compilation supported on C++11, and
-/// compiles on OSX (clang/gcc), Linux (gcc) and Windows (MSVC 2017).
+/// compiles on OSX (clang from Xcode 9+), Linux (gcc 6+, clang 4+)
+/// and Windows (MSVC 2017).
 ///
 /// For image loading and saving, Yocto/GL depends on `stb_image.h`,
 /// `stb_image_write.h`, `stb_image_resize.h` and `tinyexr.h`. These features
@@ -701,7 +702,7 @@
 
 // enable glTF
 #ifndef YGL_GLTF
-#define YGL_GLTF 0
+#define YGL_GLTF 1
 #endif
 
 // enable OpenGL
@@ -721,6 +722,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -742,14 +744,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-/**
- * In Visual Studio, __cplusplus still has the old value of 199711L
- */
-// HACK to avoid compilation with MSVC2015 and C++11 without dirtying code
-/*#if defined(_WIN32) || __cplusplus < 201402L
-#define constexpr
-#endif*/
 
 // Compilation option
 #define YGL_FAST_RANDFLOAT 1
@@ -2912,7 +2906,7 @@ inline vec3f transform_vector_inverse(const frame3f& a, const vec3f& b) {
 
 /// inverse transforms a direction by a frame (rigid affine transform)
 inline vec3f transform_direction_inverse(const frame3f& a, const vec3f& b) {
-    return normalize(transform_direction(a, b));
+    return normalize(transform_vector_inverse(a, b));
 }
 
 /// transforms a ray by a matrix (direction is not normalized after)
@@ -4593,12 +4587,20 @@ inline vector<T> subdivide_catmullclark(const vector<vec4i>& quads,
 
 /// Generate a rectangular grid of usteps x vsteps uv values for parametric
 /// surface generation.
-inline tuple<vector<vec4i>, vector<vec2f>> make_uvquads(
-    int usteps, int vsteps) {
-    auto vid = [usteps](int i, int j) { return j * (usteps + 1) + i; };
-    auto uv = vector<vec2f>((usteps + 1) * (vsteps + 1));
-    for (auto j = 0; j <= vsteps; j++) {
-        for (auto i = 0; i <= usteps; i++) {
+inline tuple<vector<vec4i>, vector<vec2f>> make_uvquads(int usteps, int vsteps,
+    bool uwrap = false, bool vwrap = false, bool vpole0 = false,
+    bool vpole1 = false) {
+    auto uvert = (uwrap) ? usteps : usteps + 1;
+    auto vvert = (vwrap) ? vsteps : vsteps + 1;
+    auto vid = [=](int i, int j) {
+        if (uwrap) i = i % usteps;
+        if (vwrap) j = j % vsteps;
+        return j * uvert + i;
+    };
+
+    auto uv = vector<vec2f>(uvert * vvert);
+    for (auto j = 0; j < vvert; j++) {
+        for (auto i = 0; i < uvert; i++) {
             uv[vid(i, j)] = {i / (float)usteps, j / (float)vsteps};
         }
     }
@@ -4611,11 +4613,31 @@ inline tuple<vector<vec4i>, vector<vec2f>> make_uvquads(
         }
     }
 
+    if (vpole0) {
+        if (vwrap) throw runtime_error("cannot have a pole with wrapping");
+        uv = vector<vec2f>(uv.begin() + uvert, uv.end());
+        uv.insert(uv.begin(), {0, 0});
+        for (auto& q : quads) {
+            for (auto& vid : q) { vid = (vid < usteps) ? 0 : vid - uvert + 1; }
+            if (q.x == 0 && q.y == 0) q = {q.z, q.w, q.x, q.y};
+        }
+    }
+
+    if (vpole1) {
+        if (vwrap) throw runtime_error("cannot have a pole with wrapping");
+        auto pid = (int)uv.size() - uvert;
+        uv = vector<vec2f>(uv.begin(), uv.end() - uvert);
+        uv.insert(uv.end(), {0, 1});
+        for (auto& q : quads) {
+            for (auto& vid : q) { vid = (vid < pid) ? vid : pid; }
+        }
+    }
+
     return {quads, uv};
 }
 
 /// Generate parametric num lines of usteps segments.
-inline tuple<vector<vec2i>, vector<vec2f>> make_lines(int num, int usteps) {
+inline tuple<vector<vec2i>, vector<vec2f>> make_uvlines(int num, int usteps) {
     auto vid = [usteps](int i, int j) { return j * (usteps + 1) + i; };
     auto uv = vector<vec2f>((usteps + 1) * num);
     for (auto j = 0; j < num; j++) {
@@ -4635,7 +4657,7 @@ inline tuple<vector<vec2i>, vector<vec2f>> make_lines(int num, int usteps) {
 }
 
 /// Generate a parametric point set. Mostly here for completeness.
-inline tuple<vector<int>, vector<vec2f>> make_points(int num) {
+inline tuple<vector<int>, vector<vec2f>> make_uvpoints(int num) {
     auto uv = vector<vec2f>(num);
     for (auto i = 0; i < num; i++) { uv[i] = {i / (float)num, 0}; }
 
@@ -4838,69 +4860,72 @@ sample_triangles_points(const vector<vec3i>& triangles,
 // -----------------------------------------------------------------------------
 namespace ygl {
 
-/// Make a sphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvsphere(
-    int usteps, int vsteps);
+/// Make a sphere. Returns quads, pos.
+tuple<vector<vec3i>, vector<vec3f>> make_sphere(int level);
 
-/// Make a geodesic sphere.
-tuple<vector<vec3i>, vector<vec3f>, vector<vec3f>> make_geodesicsphere(
-    int level);
-
-/// Make a sphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvhemisphere(int usteps, int vsteps);
-
-/// Make an inside-out sphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflippedsphere(int usteps, int vsteps);
-
-/// Make an inside-out hemisphere. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflippedhemisphere(int usteps, int vsteps);
-
-/// Make a quad.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvquad(
-    int usteps, int vsteps);
+/// Make a geodesic sphere. Returns quads, pos.
+tuple<vector<vec3i>, vector<vec3f>> make_geodesicsphere(int level);
 
 /// Make a cube with unique vertices. This is watertight but has no
-/// texture coordinates or normals.
+/// texture coordinates or normals. Returns quads, pos.
 tuple<vector<vec4i>, vector<vec3f>> make_cube();
 
+/// Make a sphere. This is not watertight. Returns quads, pos, norm, texcoord.
+tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvsphere(
+    int level, bool flipped = false);
+
+/// Make a sphere. This is not watertight. Returns quads, pos, norm, texcoord.
+tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
+make_uvhemisphere(int level, bool flipped = false);
+
+/// Make a quad. Returns quads, pos, norm, texcoord.
+tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvquad(
+    int level);
+
+/// Make a facevarying sphere with unique vertices but different texture
+/// coordinates. Returns (quads, pos), (quads, norm), (quads, texcoord).
+tuple<vector<vec4i>, vector<vec3f>, vector<vec4i>, vector<vec3f>, vector<vec4i>,
+    vector<vec2f>>
+make_fvsphere();
+
 /// Make a facevarying cube with unique vertices but different texture
-/// coordinates.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec4i>, vector<vec2f>> make_fvcube();
+/// coordinates. Returns (quads, pos), (quads, norm), (quads, texcoord).
+tuple<vector<vec4i>, vector<vec3f>, vector<vec4i>, vector<vec3f>, vector<vec4i>,
+    vector<vec2f>>
+make_fvcube();
 
 /// Make a suzanne monkey model for testing. Note that some quads are
-/// degenerate.
+/// degenerate. Returns quads, pos.
 tuple<vector<vec4i>, vector<vec3f>> make_suzanne();
 
-/// Make a cube with uv. This is not watertight.
+/// Make a cube with uv. This is not watertight. Returns quads, pos, norm,
+/// texcoord.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>> make_uvcube(
-    int usteps, int vsteps);
+    int level);
 
-/// Make a sphere from a cube. This is not watertight.
+/// Make a sphere from a cube. This is not watertight. Returns quads, pos, norm,
+/// texcoord.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvspherecube(int usteps, int vsteps);
+make_uvspherecube(int level);
 
 /// Make a cube than stretch it towards a sphere. This is not watertight.
+/// Returns quads, pos, norm, texcoord.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvspherizedcube(int usteps, int vsteps, float radius);
+make_uvspherizedcube(int level, float radius);
 
-/// Make a flipped sphere. This is not watertight.
+/// Make a flipped sphere. This is not watertight. Returns quads, pos, norm,
+/// texcoord.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflipcapsphere(int usteps, int vsteps, float radius);
+make_uvflipcapsphere(int level, float z, bool flipped = false);
 
-/// Make a butout sphere. This is not watertight.
+/// Make a cutout sphere. This is not watertight. Returns quads, pos, norm,
+/// texcoord.
 tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvcutsphere(int usteps, int vsteps, float radius);
+make_uvcutsphere(int level, float z, bool flipped = false);
 
-/// Make a quad. This is not watertight.
-tuple<vector<vec4i>, vector<vec3f>, vector<vec3f>, vector<vec2f>>
-make_uvflippedcutsphere(int usteps, int vsteps, float radius);
-
-/// Make a hair ball around a shape
+/// Make a hair ball around a shape. Returns lines, pos, norm, texcoord, radius.
 tuple<vector<vec2i>, vector<vec3f>, vector<vec3f>, vector<vec2f>, vector<float>>
-make_hair(int num, int usteps, const vec2f& len, const vec2f& rad,
+make_hair(int num, int level, const vec2f& len, const vec2f& rad,
     const vector<vec3i>& striangles, const vector<vec4i>& squads,
     const vector<vec3f>& spos, const vector<vec3f>& snorm,
     const vector<vec2f>& stexcoord, const vec2f& noise = zero2f,
@@ -7683,16 +7708,20 @@ enum struct test_scene_type {
     cornell_box,     // Cornell box
     textures,        // Scene containing all generated textures
     shapes,          // Scene contaning a few meshes
+    plane_al,        // Simple scene with a plane and area lights
+    nothing_el,      // Simple scene with no objects and an environment map
     basic_pl,        // Simple scene with no textures and point lights
     simple_pl,       // Textured scene with point lights
     simple_al,       // Textured scene with area lights
     simple_el,       // Textured scene with env lights
-    transparent_pl,  // Scene to test trasparency
-    points_pl,       // Point primitive
-    lines_pl,        // Line primitives
-    subdiv_pl,       // Scene to test subdivions surfaces
-    matball1_al,     // Material ball - area light
-    matball1_el,     // Material ball - env light
+    transparent_al,  // Scene to test trasparency
+    points_al,       // Point primitive
+    lines_al,        // Line primitives
+    subdiv_al,       // Scene to test subdivions surfaces
+    plastics_al,     // Material ball with plastics - area light
+    plastics_el,     // Material ball with plastics - env light
+    metals_al,       // Material ball with metals - area light
+    metals_el,       // Material ball with metals - env light
     tesselation_pl,  // Scene to show different tesselation
     textureuv_pl,    // Scene to show texture uvs
     normalmap_pl,    // Scene to show normal mapping
@@ -7706,15 +7735,20 @@ inline const vector<pair<string, test_scene_type>>& test_scene_names() {
         {"cornell_box", test_scene_type::cornell_box},
         {"textures", test_scene_type::textures},
         {"shapes", test_scene_type::shapes},
+        {"plane_al", test_scene_type::plane_al},
+        {"nothing_el", test_scene_type::nothing_el},
         {"basic_pl", test_scene_type::basic_pl},
         {"simple_pl", test_scene_type::simple_pl},
         {"simple_al", test_scene_type::simple_al},
         {"simple_el", test_scene_type::simple_el},
-        {"transparent_pl", test_scene_type::transparent_pl},
-        {"points_pl", test_scene_type::points_pl},
-        {"lines_pl", test_scene_type::lines_pl},
-        {"subdiv_pl", test_scene_type::subdiv_pl},
-        {"matball1_al", test_scene_type::matball1_al},
+        {"transparent_al", test_scene_type::transparent_al},
+        {"points_al", test_scene_type::points_al},
+        {"lines_al", test_scene_type::lines_al},
+        {"subdiv_al", test_scene_type::subdiv_al},
+        {"plastics_al", test_scene_type::plastics_al},
+        {"plastics_el", test_scene_type::plastics_el},
+        {"metals_al", test_scene_type::metals_al},
+        {"metals_el", test_scene_type::metals_el},
         {"tesselation_pl", test_scene_type::tesselation_pl},
         {"textureuv_pl", test_scene_type::textureuv_pl},
         {"normalmap_pl", test_scene_type::normalmap_pl},
@@ -9575,8 +9609,14 @@ inline string format(const string& fmt, const Args&... args) {
 
 /// Wrapper for the above function that prints to stdout.
 template <typename... Args>
-inline string print(const string& fmt, const Args&... args) {
+inline void print(const string& fmt, const Args&... args) {
     printf("%s", format(fmt, args...).c_str());
+}
+
+/// Wrapper for the above function that prints to stdout with endline.
+template <typename... Args>
+inline void println(const string& fmt, const Args&... args) {
+    printf("%s\n", format(fmt, args...).c_str());
 }
 
 }  // namespace ygl
@@ -11528,59 +11568,59 @@ bool draw_value_widget(gl_window* win, const string& lbl, string& str);
 
 /// Value widget
 bool draw_value_widget(gl_window* win, const string& lbl, int* val, int ncomp,
-    int min, int max, int incr = 1);
+    int min = 0, int max = 1, int incr = 1);
 
 /// Value widget
 bool draw_value_widget(gl_window* win, const string& lbl, float* val, int ncomp,
-    float min, float max, float incr = 1);
+    float min = 0, float max = 1, float incr = 1);
 
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, int& val,
-    int min, int max, int incr = 1) {
+    int min = 0, int max = 1, int incr = 1) {
     return draw_value_widget(win, lbl, &val, 1, min, max, incr);
 }
 
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, vec2i& val,
-    int min, int max, int incr = 1) {
+    int min = 0, int max = 1, int incr = 1) {
     return draw_value_widget(win, lbl, val.data(), 2, min, max, incr);
 }
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, vec3i& val,
-    int min, int max, int incr = 1) {
+    int min = 0, int max = 1, int incr = 1) {
     return draw_value_widget(win, lbl, val.data(), 3, min, max, incr);
 }
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, vec4i& val,
-    int min, int max, int incr = 1) {
+    int min = 0, int max = 1, int incr = 1) {
     return draw_value_widget(win, lbl, val.data(), 4, min, max, incr);
 }
 
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, float& val,
-    float min, float max, float incr = 1) {
+    float min = 0, float max = 1, float incr = 1) {
     return draw_value_widget(win, lbl, &val, 1, min, max, incr);
 }
 
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, vec2f& val,
-    float min, float max, float incr = 1) {
+    float min = 0, float max = 1, float incr = 1) {
     return draw_value_widget(win, lbl, val.data(), 2, min, max, incr);
 }
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, vec3f& val,
-    float min, float max, float incr = 1) {
+    float min = 0, float max = 1, float incr = 1) {
     return draw_value_widget(win, lbl, val.data(), 3, min, max, incr);
 }
 /// Value widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, vec4f& val,
-    float min, float max, float incr = 1) {
+    float min = 0, float max = 1, float incr = 1) {
     return draw_value_widget(win, lbl, val.data(), 4, min, max, incr);
 }
 
 /// Slider widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, mat4f& val,
-    float min, float max, float incr = 1) {
+    float min = 0, float max = 1, float incr = 1) {
     auto modx = draw_value_widget(win, lbl + ".x", val.x, min, max, incr);
     auto mody = draw_value_widget(win, lbl + ".y", val.y, min, max, incr);
     auto modz = draw_value_widget(win, lbl + ".z", val.z, min, max, incr);
@@ -11590,7 +11630,7 @@ inline bool draw_value_widget(gl_window* win, const string& lbl, mat4f& val,
 
 /// Slider widget
 inline bool draw_value_widget(gl_window* win, const string& lbl, frame3f& val,
-    float min, float max, float incr = 1) {
+    float min = -1, float max = 1, float incr = 1) {
     auto modx = draw_value_widget(win, lbl + ".x", val.x, -1, 1, 0.01f);
     auto mody = draw_value_widget(win, lbl + ".y", val.y, -1, 1, 0.01f);
     auto modz = draw_value_widget(win, lbl + ".z", val.z, -1, 1, 0.01f);
@@ -11607,11 +11647,14 @@ inline bool draw_value_widget(
     return mod;
 }
 
-/// Slider widget
+/// Color widget
 bool draw_color_widget(gl_window* win, const string& lbl, vec4f& val);
 
-/// Slider widget
+/// Color widget
 bool draw_color_widget(gl_window* win, const string& lbl, vec4b& val);
+
+/// Color widget
+bool draw_color_widget(gl_window* win, const string& lbl, vec3f& val);
 
 // Support
 inline bool _enum_widget_labels_ptr(void* data, int idx, const char** out) {
