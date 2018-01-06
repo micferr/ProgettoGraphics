@@ -23,7 +23,7 @@ namespace rekt {
 	/**
 	 * Adds mid-points for each side of the input polygon.
 	 *
-	 * points[0] must non be repeated at the end of the input.
+	 * points[0] must not be repeated at the end of the input.
 	 */
 	std::vector<ygl::vec3f> tesselate_shape(
 		const std::vector<ygl::vec3f>& points,
@@ -91,14 +91,17 @@ namespace rekt {
 
 	/**
 	 * Returns a 2D regular polygon in 3D space, with a fixed
-	 * value of 0 for the y component of the points
+	 * value of 0 for the y component of the points.
+	 * Face normal is (0,1,0)
 	 */
 	std::vector<ygl::vec3f> make_regular_polygonXZ(
 		int num_sides,
 		float radius = 1.f,
 		bool xz_aligned = false
 	) {
-		return to_3d(make_regular_polygon(num_sides, radius, xz_aligned));
+		auto poly = to_3d(make_regular_polygon(num_sides, radius, xz_aligned));
+		std::reverse(poly.begin(), poly.end());
+		return poly;
 	}
 
 	std::vector<ygl::vec2f> make_quad(float side_length = 1.f) {
@@ -107,7 +110,9 @@ namespace rekt {
 	}
 
 	std::vector<ygl::vec3f> make_quadXZ(float side_length = 1.f) {
-		return to_3d(make_quad(side_length));
+		auto quad = to_3d(make_quad(side_length));
+		std::reverse(quad.begin(), quad.end());
+		return quad;
 	}
 
 	template<typename T>
@@ -158,7 +163,7 @@ namespace rekt {
 				ygl::vec2f mid =  (points[i] + points[(i + 1) % points.size()]) / 2;
 				float side_normal_angle = 
 					atan2f(mid1.x - mid2.x, mid1.y - mid2.y) + 
-					((pi / 2) * (outside?-1.f:1.f));
+					((pi / 2) * (outside?+1.f:-1.f));
 				// Height of an equilateral triangle is sqrt(3)/2 times the length of its side
 				// sqrt(3)/2 roughly equals 0.866
 				float triangle_height = ygl::length(mid2 - mid1)*0.866f;
@@ -194,7 +199,7 @@ namespace rekt {
 				ygl::vec2f mid2 = (points[i] * 1 / 3) + (points[(i + 1) % points.size()] * 2 / 3);
 				float side_normal_angle = 
 					atan2f(mid1.x - mid2.x, mid1.y - mid2.y) + 
-					((pi / 2) * (outside ? -1.f : 1.f));
+					((pi / 2) * (outside ? +1.f : -1.f));
 				float quad_height = ygl::length(mid2 - mid1);
 				auto add = ygl::vec2f{ sin(side_normal_angle)*quad_height, cos(side_normal_angle)*quad_height };
 				newpos.push_back(mid1);
