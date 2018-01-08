@@ -126,6 +126,7 @@ namespace rekt {
 	 * the polygon (i.e. a quad represented as pos = {(-1,-1), (1,-1), (1,1), (-1,1), (0,0)},
 	 * triangles = {(0,1,4),(1,2,4),(2,3,4),(3,0,4)} is fine).
 	 * Note that two internal faces, hidden inside the polygon, will be created for each
+	 * internal side
 	 */
 	ygl::shape* thicken_polygon(
 		const std::vector<ygl::vec3i>& triangles,
