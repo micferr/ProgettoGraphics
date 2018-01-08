@@ -195,7 +195,7 @@ namespace rekt {
  * If origin_center is true, the model is centered on (0,0,0),
  * else its center is (width,height,depth)/2
  */
-#define DEFAULT_ORIGIN_CENTER false
+#define DEFAULT_ORIGIN_CENTER true
 
 	std::tuple<std::vector<ygl::vec4i>, std::vector<ygl::vec3f>> 
 		make_parallelepidedon(
@@ -214,6 +214,7 @@ namespace rekt {
 			if (!origin_center) {
 				p += {w, h, d};
 			}
+			p += {x, y, z};
 		}
 		return t;
 	}
