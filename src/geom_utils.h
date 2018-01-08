@@ -115,6 +115,110 @@ namespace rekt {
 		return quad;
 	}
 
+	/**
+	 * Makes a thick solid from a polygon.
+	 *
+	 * Thickness is added along the vertexes' normals; if norm is empty,
+	 * it is assumed that all vertexes lie on the same plane and the face 
+	 * normal is used instead.
+	 *
+	 * It is not assumed that all points in the vector lie on the perimeter of 
+	 * the polygon (i.e. a quad represented as pos = {(-1,-1), (1,-1), (1,1), (-1,1), (0,0)},
+	 * triangles = {(0,1,4),(1,2,4),(2,3,4),(3,0,4)} is fine).
+	 * Note that two internal faces, hidden inside the polygon, will be created for each
+	 */
+	ygl::shape* thicken_polygon(
+		const std::vector<ygl::vec3i>& triangles,
+		const std::vector<ygl::vec4i>& quads,
+		const std::vector<ygl::vec3f>& pos,
+		const std::vector<ygl::vec3f>& norm,
+		float thickness
+	) {
+		auto shape = new ygl::shape();
+		shape->pos = pos;
+		if (norm.size() != 0) {
+			for (int i = 0; i < pos.size(); i++) {
+				shape->pos.push_back(pos[i] + norm[i] * thickness);
+			}
+		}
+		else {
+			ygl::vec3f p1, p2, p3;
+			if (triangles.size() != 0) {
+				p1 = pos[triangles[0].x],
+				p2 = pos[triangles[0].y],
+				p3 = pos[triangles[0].z];
+			}
+			else { // quads.size() != 0
+				p1 = pos[quads[0].x],
+				p2 = pos[quads[0].y],
+				p3 = pos[quads[0].z];
+			}
+			auto face_norm = ygl::normalize(ygl::cross(p2 - p1, p3 - p2));
+			for (auto p : pos) {
+				shape->pos.push_back(p + face_norm*thickness);
+			}
+		}
+		shape->triangles.reserve(triangles.size() * 2); // Each triangle will be duplicated
+		shape->quads.reserve(
+			quads.size() * 2 +
+			triangles.size() * 3 + 
+			quads.size() * 4
+		);
+		int ps = pos.size();
+		ygl::vec3i psize3 = { ps,ps,ps };
+		ygl::vec4i psize4 = { ps,ps,ps,ps };
+		for (const auto& t : triangles) {
+			shape->triangles.push_back({ t.z, t.y, t.x }); // Original face, seen from the other side
+			const auto nt = t + psize3;
+			shape->triangles.push_back(nt); // New face
+			// Sides
+			shape->quads.push_back({ t.z,t.y,nt.y,nt.x });
+			shape->quads.push_back({ t.y,t.x,nt.z,nt.y });
+			shape->quads.push_back({ t.x,t.z,nt.x,nt.z });
+		}
+		for (const auto& q : quads) {
+			shape->quads.push_back({ q.w,q.z,q.y,q.x });
+			const auto nq = q + psize4;
+			shape->quads.push_back(nq);
+			// Sides
+			shape->quads.push_back({ q.w,q.z,nq.y,nq.x });
+			shape->quads.push_back({ q.z,q.y,nq.z,nq.y });
+			shape->quads.push_back({ q.y,q.x,nq.w,nq.z });
+			shape->quads.push_back({ q.x,q.w,nq.w,nq.x });
+		}
+		ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos);
+		return shape;
+	}
+
+/**
+ * If origin_center is true, the model is centered on (0,0,0),
+ * else its center is (width,height,depth)/2
+ */
+#define DEFAULT_ORIGIN_CENTER false
+
+	std::tuple<std::vector<ygl::vec4i>, std::vector<ygl::vec3f>> 
+		make_parallelepidedon(
+			float x, float y, float z,
+			float width, float height, float depth,
+			bool origin_center = DEFAULT_ORIGIN_CENTER
+		) {
+		auto t = ygl::make_cube();
+		auto w = width / 2.f,
+			h = height / 2.f,
+			d = depth / 2.f;
+		for (auto& p : std::get<1>(t)) {
+			p.x *= w;
+			p.y *= h;
+			p.z *= d;
+			if (!origin_center) {
+				p += {w, h, d};
+			}
+		}
+		return t;
+	}
+
+#undef DEFAULT_ORIGIN_CENTER
+
 	template<typename T>
 	void displace(std::vector<T>& points, T& disp) {
 		for (auto& p : points) p += disp;
