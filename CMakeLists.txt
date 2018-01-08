@@ -65,8 +65,24 @@ add_library(yocto_gl
 )
 target_link_libraries(yocto_gl ${OPENGL_gl_LIBRARY} ${GLFW_LIBRARY} ${GLEW_LIBRARIES})
 
+add_library(poly2tri
+    src/poly2tri/poly2tri/poly2tri.h
+    src/poly2tri/poly2tri/common/utils.h
+    src/poly2tri/poly2tri/common/shapes.h
+    src/poly2tri/poly2tri/common/shapes.cc
+
+    src/poly2tri/poly2tri/sweep/advancing_front.h
+    src/poly2tri/poly2tri/sweep/advancing_front.cc
+    src/poly2tri/poly2tri/sweep/cdt.h
+    src/poly2tri/poly2tri/sweep/cdt.cc
+    src/poly2tri/poly2tri/sweep/sweep.h
+    src/poly2tri/poly2tri/sweep/sweep.cc
+    src/poly2tri/poly2tri/sweep/sweep_context.h
+    src/poly2tri/poly2tri/sweep/sweep_context.cc
+)
+
 add_executable(test_main src/test_main.cpp)
-target_link_libraries(test_main yocto_gl)
+target_link_libraries(test_main yocto_gl poly2tri)
 
 add_executable(ytestgen src/apps/ytestgen.cpp src/yocto/yocto_gl.h)
 add_executable(ytrace src/apps/ytrace.cpp src/yocto/yocto_gl.h)
