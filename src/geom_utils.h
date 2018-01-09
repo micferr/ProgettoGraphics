@@ -53,15 +53,17 @@ namespace rekt {
 	}
 
 	/**
-	 * Transforms 2D points (x,z) to 3D points (x,y,z), with y in input
+	 * Transforms 2D points (x,z) to 3D points (x,y,-z), with y in input.
+	 * z is flipped by default to preserve clockwiseness
 	 */
 	std::vector<ygl::vec3f> to_3d(
 		const std::vector<ygl::vec2f>& points, 
-		float y = 0.f
+		float y = 0.f,
+		bool flip_z = true
 	) {
 		std::vector<ygl::vec3f> res;
 		for (const auto& p : points) {
-			res.push_back({ p.x, y, p.y });
+			res.push_back({ p.x, y, flip_z ? -p.y : p.y });
 		}
 		return res;
 	}
@@ -100,7 +102,6 @@ namespace rekt {
 		bool xz_aligned = false
 	) {
 		auto poly = to_3d(make_regular_polygon(num_sides, radius, xz_aligned));
-		std::reverse(poly.begin(), poly.end());
 		return poly;
 	}
 
@@ -111,7 +112,6 @@ namespace rekt {
 
 	std::vector<ygl::vec3f> make_quadXZ(float side_length = 1.f) {
 		auto quad = to_3d(make_quad(side_length));
-		std::reverse(quad.begin(), quad.end());
 		return quad;
 	}
 
@@ -183,8 +183,8 @@ namespace rekt {
 			_points[0] -= ygl::normalize(points[1] - points[0]) * half_width;
 			_points.back() += ygl::normalize(points[points.size() - 1] - points[points.size() - 2]) * half_width;
 		}
-		_points.push_back(points.back());
-		_points.insert(_points.begin(), points.front());
+		_points.push_back(2*_points[_points.size()-1] - _points[_points.size()-2]); //p[size] + to(p[last-1], p[last])
+		_points.insert(_points.begin(), _points[0] - (_points[1]-_points[0]));
 		for (int i = 1; i < _points.size() - 1; i++) {
 			const auto& p1 = _points[i - 1];
 			const auto& p2 = _points[i];
@@ -200,62 +200,40 @@ namespace rekt {
 		}
 		std::vector<ygl::vec4i> quads;
 		for (int i = 0; i < vertexes.size()-4; i += 2) {
-			quads.push_back({ i,i+1,i + 3,i + 2 });
+			quads.push_back({ i,i + 1,i + 3,i + 2 });
 		}
-		for (auto& p : vertexes) p.y = -p.y;
-		return { quads, to_3d(vertexes) };
+		return { quads, to_3d(vertexes,0,false) };
+	}
+
+	std::vector<ygl::vec3f> make_wide_line_border(
+		const std::vector<ygl::vec2f>& points,
+		float width,
+		bool lengthen_ends = false
+	) {
+		auto pos = std::get<1>(make_wide_line(points, width, lengthen_ends));
+		std::vector<ygl::vec3f> res;
+		for (int i = 0; i < pos.size(); i += 2) res.push_back(pos[i]);
+		for (int i = pos.size() - 1; i >= 0; i -= 2) res.push_back(pos[i]);
+		return res;
 	}
 
 	/**
 	 * Makes a thick solid from a polygon.
 	 *
-	 * Thickness is added along the vertexes' normals; if norm is empty,
-	 * it is assumed that all vertexes lie on the same plane and the face 
-	 * normal is used instead.
-	 *
-	 * It is not assumed that all points in the vector lie on the perimeter of 
-	 * the polygon (i.e. a quad represented as pos = {(-1,-1), (1,-1), (1,1), (-1,1), (0,0)},
-	 * triangles = {(0,1,4),(1,2,4),(2,3,4),(3,0,4)} is fine).
-	 * Note that two internal faces, hidden inside the polygon, will be created for each
-	 * internal side
+	 * Thickness is added along the face normal
 	 */
 	ygl::shape* thicken_polygon(
-		const std::vector<ygl::vec3i>& triangles,
-		const std::vector<ygl::vec4i>& quads,
 		const std::vector<ygl::vec3f>& pos,
-		const std::vector<ygl::vec3f>& norm,
 		float thickness
 	) {
 		auto shape = new ygl::shape();
 		shape->pos = pos;
-		if (norm.size() != 0) {
-			for (int i = 0; i < pos.size(); i++) {
-				shape->pos.push_back(pos[i] + norm[i] * thickness);
-			}
+		auto face_norm = ygl::normalize(ygl::cross(pos[1] - pos[0], pos[2] - pos[1]));
+		face_norm = { 0,1,0 };
+		for (const auto& p : pos) {
+			shape->pos.push_back(p + face_norm*thickness);
 		}
-		else {
-			ygl::vec3f p1, p2, p3;
-			if (triangles.size() != 0) {
-				p1 = pos[triangles[0].x],
-				p2 = pos[triangles[0].y],
-				p3 = pos[triangles[0].z];
-			}
-			else { // quads.size() != 0
-				p1 = pos[quads[0].x],
-				p2 = pos[quads[0].y],
-				p3 = pos[quads[0].z];
-			}
-			auto face_norm = ygl::normalize(ygl::cross(p2 - p1, p3 - p2));
-			for (auto p : pos) {
-				shape->pos.push_back(p + face_norm*thickness);
-			}
-		}
-		shape->triangles.reserve(triangles.size() * 2); // Each triangle will be duplicated
-		shape->quads.reserve(
-			quads.size() * 2 +
-			triangles.size() * 3 + 
-			quads.size() * 4
-		);
+		std::vector<ygl::vec3i> triangles; // TODO!!!: get from poly2tri
 		int ps = pos.size();
 		ygl::vec3i psize3 = { ps,ps,ps };
 		ygl::vec4i psize4 = { ps,ps,ps,ps };
@@ -263,21 +241,11 @@ namespace rekt {
 			shape->triangles.push_back({ t.z, t.y, t.x }); // Original face, seen from the other side
 			const auto nt = t + psize3;
 			shape->triangles.push_back(nt); // New face
-			// Sides
-			shape->quads.push_back({ t.z,t.y,nt.y,nt.x });
-			shape->quads.push_back({ t.y,t.x,nt.z,nt.y });
-			shape->quads.push_back({ t.x,t.z,nt.x,nt.z });
 		}
-		for (const auto& q : quads) {
-			shape->quads.push_back({ q.w,q.z,q.y,q.x });
-			const auto nq = q + psize4;
-			shape->quads.push_back(nq);
-			// Sides
-			shape->quads.push_back({ q.w,q.z,nq.y,nq.x });
-			shape->quads.push_back({ q.z,q.y,nq.z,nq.y });
-			shape->quads.push_back({ q.y,q.x,nq.w,nq.z });
-			shape->quads.push_back({ q.x,q.w,nq.w,nq.x });
+		for (int i = 0; i < pos.size() - 1; i++) {
+			shape->quads.push_back({ i,i + 1,ps + i + 1,ps + i });
 		}
+		shape->quads.push_back({ ps - 1,0,ps,2*ps-1 });
 		ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos);
 		return shape;
 	}
