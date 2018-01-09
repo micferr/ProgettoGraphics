@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "yocto\yocto_gl.h"
+#include "poly2tri\poly2tri\poly2tri.h"
 
 namespace rekt {
 	const float pi = 3.14159265359f;
@@ -215,6 +216,57 @@ namespace rekt {
 		for (int i = 0; i < pos.size(); i += 2) res.push_back(pos[i]);
 		for (int i = pos.size() - 1; i >= 0; i -= 2) res.push_back(pos[i]);
 		return res;
+	}
+
+	/**
+	 * Triangulates an arbitrary shape.
+	 * Holes must be given in clockwise order
+	 */
+	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec3f>>
+		triangulate(
+			const std::vector<ygl::vec3f>& border,
+			const std::vector<std::vector<ygl::vec3f>>& holes = {}
+		) {
+		// Code adapted from https://github.com/greenm01/poly2tri/blob/master/testbed/main.cc
+		std::vector<p2t::Point*> polyline;
+		for (const auto& p : border) polyline.push_back(new p2t::Point(p.x,p.z));
+
+		std::vector<std::vector<p2t::Point*>> p2t_holes;
+		for (const auto& hole : holes) {
+			p2t_holes.push_back(std::vector<p2t::Point*>());
+			for (const auto& p : hole) p2t_holes.back().push_back(new p2t::Point(p.x,p.z));
+		}
+
+		p2t::CDT* cdt = new p2t::CDT(polyline);
+		for (const auto& hole : p2t_holes) cdt->AddHole(hole);
+
+		cdt->Triangulate();
+		auto p2t_triangles = cdt->GetTriangles();
+		auto map = cdt->GetMap();
+
+		std::vector<ygl::vec2f> pos;
+		std::vector<ygl::vec3i> triangles;
+		int i = 0;
+		for (auto t : p2t_triangles) {
+			auto p1 = *t->GetPoint(0),
+				p2 = *t->GetPoint(1),
+				p3 = *t->GetPoint(2);
+			pos.push_back({ float(p1.x), float(p1.y) });
+			pos.push_back({ float(p2.x), float(p2.y) });
+			pos.push_back({ float(p3.x), float(p3.y) });
+			triangles.push_back({ i,i + 1,i + 2 });
+			i += 3;
+		}
+
+		//Cleanup
+		for (auto p : polyline) delete p;
+		for (const auto& hole : p2t_holes) {
+			for (auto p : hole) {
+				delete p;
+			}
+		}
+
+		return { triangles, to_3d(pos) };
 	}
 
 	/**
