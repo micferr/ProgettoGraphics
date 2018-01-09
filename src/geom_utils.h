@@ -116,6 +116,97 @@ namespace rekt {
 	}
 
 	/**
+	 * Returns the point of a line made of 'steps' consecutive, connected
+	 * segments.
+	 * 
+	 * Arguments:
+	 *		start : Position of the first vertex of the line
+	 *		steps : Number of segments in the line
+	 *		start_alpha : Angle of the first generated segment
+	 *		alpha_delta_per_step : Generator of subsequent angle changes
+	 *			(the returned angle is a delta to add to the previous value).
+	 *		segment_length_per_step : Generator of subsequent segment lengths
+	 */
+	std::vector<ygl::vec2f> make_segmented_line(
+		const ygl::vec2f& start,
+		unsigned steps,
+		float start_alpha,
+		const std::function<float()>& alpha_delta_per_step,
+		const std::function<float()>& segment_length_per_step
+	) {
+		std::vector<ygl::vec2f> points;
+		points.push_back(start);
+		float alpha = start_alpha;
+		for (int i = 0; i < steps; i++) {
+			alpha += !i ? 0.f : alpha_delta_per_step();
+			const ygl::vec2f& last_pos = points.back();
+			float segment_length = segment_length_per_step();
+			points.push_back(
+				last_pos + ygl::vec2f{cos(alpha), sin(alpha)}*segment_length
+			);
+		}
+		return points;
+	}
+
+	/**
+	 * Overridden version where the starting angle is also
+	 * randomly generated
+	 */
+	std::vector<ygl::vec2f> make_segmented_line(
+		const ygl::vec2f& start,
+		unsigned steps,
+		const std::function<float()>& alpha_delta_per_step,
+		const std::function<float()>& segment_length_per_step
+	) {
+		return make_segmented_line(
+			start,
+			steps,
+			alpha_delta_per_step(),
+			alpha_delta_per_step,
+			segment_length_per_step
+		);
+	}
+
+	/**
+	 * Returns a 2d surface obtained from widening the input line.
+	 * It is currently assumed that the resulting polygon will be simple.
+	 */
+	std::tuple<std::vector<ygl::vec4i>, std::vector<ygl::vec3f>> make_wide_line(
+		const std::vector<ygl::vec2f>& points,
+		float width,
+		bool lengthen_ends = false
+	) {
+		auto half_width = width / 2.f;
+		auto _points = points; // Work-around to keep code cleaner :)
+		std::vector<ygl::vec2f> vertexes;
+		if (lengthen_ends) {
+			_points[0] -= ygl::normalize(points[1] - points[0]) * half_width;
+			_points.back() += ygl::normalize(points[points.size() - 1] - points[points.size() - 2]) * half_width;
+		}
+		_points.push_back(points.back());
+		_points.insert(_points.begin(), points.front());
+		for (int i = 1; i < _points.size() - 1; i++) {
+			const auto& p1 = _points[i - 1];
+			const auto& p2 = _points[i];
+			const auto& p3 = _points[i + 1];
+			auto segment1 = p2 - p1;
+			auto segment2 = p3 - p2;
+			auto alpha1 = atan2f(segment1.y, segment1.x);
+			auto alpha2 = atan2f(segment2.y, segment2.x);
+			auto alpha = (alpha1 + alpha2) / 2;
+			ygl::vec2f delta = ygl::vec2f{ cos(alpha + pi / 2.f), sin(alpha + pi / 2.f) }*half_width;
+			vertexes.push_back(p2 + delta);
+			vertexes.push_back(p2 - delta);
+		}
+		std::vector<ygl::vec4i> quads;
+		for (int i = 0; i < vertexes.size()-4; i += 2) {
+			quads.push_back({ i,i+1,i + 3,i + 2 });
+		}
+		for (auto& p : vertexes) p.y = -p.y;
+		return { quads, to_3d(vertexes) };
+	}
+
+	/**
 	 * Makes a thick solid from a polygon.
 	 *
 	 * Thickness is added along the vertexes' normals; if norm is empty,
