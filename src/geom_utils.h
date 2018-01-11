@@ -10,6 +10,7 @@ namespace rekt {
 	const float pi = 3.14159265359f;
 
 	ygl::vec2f centroid(std::vector<ygl::vec2f>& points) {
+		// Average of the input points
 		ygl::vec2f c = { 0,0 };
 		for (auto& p : points) c += p;
 		return c / points.size();
@@ -19,25 +20,6 @@ namespace rekt {
 		ygl::vec3f c = { 0,0,0 };
 		for (auto& p : points) c += p;
 		return c / points.size();
-	}
-
-	/**
-	 * Adds mid-points for each side of the input polygon.
-	 *
-	 * points[0] must not be repeated at the end of the input.
-	 */
-	std::vector<ygl::vec3f> tesselate_shape(
-		const std::vector<ygl::vec3f>& points,
-		int num_segments = 2
-	) {
-		std::vector<ygl::vec3f> res;
-		for (int i = 0; i < points.size(); i++) {
-			res.push_back(points[i]);
-			for (int j = 0; j < num_segments - 1; j++) {
-				res.push_back(points[i] * j / num_segments + points[(i+1)%points.size()] * (num_segments - j) / num_segments);
-			}
-		}
-		return res;
 	}
 
 	/**
@@ -270,35 +252,131 @@ namespace rekt {
 	}
 
 	/**
+	 * Moves all points by the specified value
+	 */
+	template<typename T>
+	void displace(std::vector<T>& points, T& disp) {
+		for (auto& p : points) p += disp;
+	}
+
+	template<typename T>
+	void scale(std::vector<T>& points, float scale) {
+		for (auto& p : points) p *= scale;
+	}
+
+	/**
+	* Rotates all points by 'angle' radiants, counter-clockwise relative to (0,0)
+	*
+	* The function is quite inefficient, to rotate an in-world instance try changing
+	* its frame rather than using this.
+	*/
+	void rotate(std::vector<ygl::vec2f>& points, float angle) {
+		for (auto& p : points) {
+			float new_angle = atan2f(p.y, p.x) + angle;
+			float length = ygl::length(p);
+			p = { length*cos(new_angle), length*sin(new_angle) };
+		}
+	}
+
+	/**
+	 * Merges duplicate points and updates triangles and quads.
+	 * eps is the distance under which two points are considered the same.
+	 */
+	/*void compact_shape(
+		std::vector<ygl::vec3i>& triangles,
+		std::vector<ygl::vec4i>& quads,
+		std::vector<ygl::vec3f>& pos,
+		float eps = 1e-6f
+	) {
+		// Naive, computationally expensive algorithm
+		// For each point, check its duplicates and update polygons accordingly
+		std::vector<bool> merged(pos.size(), false); // Merged points will be skipped
+		for (int i = 0; i < pos.size()-1; i++) {
+			if (merged[i]) continue; // The point has already been merged
+			auto& p1 = pos[i];
+			for (int j = i + 1; j < pos.size(); j++) {
+				if (merged[j]) continue;
+				auto& p2 = pos[j];
+				if (ygl::length(p1 - p2) < eps) { // If the distance between the two points is near zero
+					merged[j] = true; // Set point j as merged
+					for (auto& t : triangles) {
+						for (auto& p : t) {
+							if (p == j) p = i; // i == j, we delete j and set p to i
+							else if (p > j) p--; // we delete j so all vertexes after it fall back one place
+						}
+					}
+					// Same as for triangles
+					for (auto& q : quads) {
+						for (auto& p : q) {
+							if (p == j) p = i;
+							else if (p > j) p--;
+						}
+					}
+				}
+			}
+		}
+		// Delete merged points from pos
+		auto pos_copy = pos;
+		pos.clear();
+		for (int i = 0; i < pos_copy.size(); i++) {
+			if (!merged[i]) {
+				pos.push_back(pos_copy[i]);
+			}
+		}
+	}*/
+
+	/**
 	 * Makes a thick solid from a polygon.
 	 *
 	 * Thickness is added along the face normal
 	 */
 	ygl::shape* thicken_polygon(
-		const std::vector<ygl::vec3f>& pos,
-		float thickness
+		const std::vector<ygl::vec3f>& border,
+		float thickness,
+		const std::vector<std::vector<ygl::vec3f>>& holes = {}
 	) {
 		auto shape = new ygl::shape();
-		shape->pos = pos;
-		auto face_norm = ygl::normalize(ygl::cross(pos[1] - pos[0], pos[2] - pos[1]));
-		face_norm = { 0,1,0 };
-		for (const auto& p : pos) {
+		shape->pos = border; 
+		auto face_norm = ygl::normalize(ygl::cross(border[1] - border[0], border[2] - border[1]));
+		face_norm = { 0,1,0 }; // ???
+		// Outer walls
+		for (const auto& p : border) {
 			shape->pos.push_back(p + face_norm*thickness);
 		}
-		std::vector<ygl::vec3i> triangles; // TODO!!!: get from poly2tri
-		int ps = pos.size();
-		ygl::vec3i psize3 = { ps,ps,ps };
-		ygl::vec4i psize4 = { ps,ps,ps,ps };
-		for (const auto& t : triangles) {
-			shape->triangles.push_back({ t.z, t.y, t.x }); // Original face, seen from the other side
-			const auto nt = t + psize3;
-			shape->triangles.push_back(nt); // New face
-		}
-		for (int i = 0; i < pos.size() - 1; i++) {
+		int ps = border.size();
+		for (int i = 0; i < border.size() - 1; i++) {
 			shape->quads.push_back({ i,i + 1,ps + i + 1,ps + i });
 		}
-		shape->quads.push_back({ ps - 1,0,ps,2*ps-1 });
-		ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos);
+		shape->quads.push_back({ ps - 1,0,ps,2 * ps - 1 });
+
+		// Hole walls
+		for (const auto& hole : holes) {
+			ps = shape->pos.size();
+			int hs = hole.size();
+			shape->pos.insert(shape->pos.end(), hole.begin(), hole.end()); // Floor points
+			for (const auto& p : hole) shape->pos.push_back(p + face_norm*thickness); // Ceiling points
+			for (int i = 0; i < hole.size() - 1; i++) {
+				shape->quads.push_back({ ps + i,ps + i + 1,ps + hs + i + 1,ps + hs + i });
+			}
+		}
+
+		// Floor and ceiling
+		ps = shape->pos.size();
+		auto triangles_data = triangulate(border, holes);
+		const auto& triangles = std::get<0>(triangles_data);
+		const auto& triangles_pos = std::get<1>(triangles_data);
+		ygl::vec3i psize3 = { ps,ps,ps };
+		ygl::vec4i psize4 = { ps,ps,ps,ps };
+		shape->pos.insert(shape->pos.end(), triangles_pos.begin(), triangles_pos.end()); // Floor
+		for (const auto& p : triangles_pos) shape->pos.push_back(p + face_norm*thickness); // Ceiling
+		for (const auto& t : triangles) {
+			auto nt = t + psize3;
+			shape->triangles.push_back({ nt.z, nt.y, nt.x }); // Original face, seen from the other side
+			nt += {int(triangles_pos.size()), int(triangles_pos.size()), int(triangles_pos.size())};
+			shape->triangles.push_back(nt); // New face
+		}
+		//compact_shape(shape->triangles, shape->quads, shape->pos);
+		shape->norm = ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos);
 		return shape;
 	}
 
@@ -331,30 +409,6 @@ namespace rekt {
 	}
 
 #undef DEFAULT_ORIGIN_CENTER
-
-	template<typename T>
-	void displace(std::vector<T>& points, T& disp) {
-		for (auto& p : points) p += disp;
-	}
-
-	template<typename T>
-	void scale(std::vector<T>& points, float scale) {
-		for (auto& p : points) p *= scale;
-	}
-
-	/**
-	 * Rotates all points by 'angle' radiants, counter-clockwise relative to (0,0)
-	 *
-	 * The function is quite inefficient, to rotate an in-world instance try changing
-	 * its frame rather than using this.
-	 */
-	void rotate(std::vector<ygl::vec2f>& points, float angle) {
-		for (auto& p : points) {
-			float new_angle = atan2f(p.y, p.x) + angle;
-			float length = ygl::length(p);
-			p = { length*cos(new_angle), length*sin(new_angle) };
-		}
-	}
 
 	/**
 	 * Adds equilateral triangles on each side of the given polygon.
