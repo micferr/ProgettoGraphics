@@ -279,53 +279,6 @@ namespace rekt {
 	}
 
 	/**
-	 * Merges duplicate points and updates triangles and quads.
-	 * eps is the distance under which two points are considered the same.
-	 */
-	/*void compact_shape(
-		std::vector<ygl::vec3i>& triangles,
-		std::vector<ygl::vec4i>& quads,
-		std::vector<ygl::vec3f>& pos,
-		float eps = 1e-6f
-	) {
-		// Naive, computationally expensive algorithm
-		// For each point, check its duplicates and update polygons accordingly
-		std::vector<bool> merged(pos.size(), false); // Merged points will be skipped
-		for (int i = 0; i < pos.size()-1; i++) {
-			if (merged[i]) continue; // The point has already been merged
-			auto& p1 = pos[i];
-			for (int j = i + 1; j < pos.size(); j++) {
-				if (merged[j]) continue;
-				auto& p2 = pos[j];
-				if (ygl::length(p1 - p2) < eps) { // If the distance between the two points is near zero
-					merged[j] = true; // Set point j as merged
-					for (auto& t : triangles) {
-						for (auto& p : t) {
-							if (p == j) p = i; // i == j, we delete j and set p to i
-							else if (p > j) p--; // we delete j so all vertexes after it fall back one place
-						}
-					}
-					// Same as for triangles
-					for (auto& q : quads) {
-						for (auto& p : q) {
-							if (p == j) p = i;
-							else if (p > j) p--;
-						}
-					}
-				}
-			}
-		}
-		// Delete merged points from pos
-		auto pos_copy = pos;
-		pos.clear();
-		for (int i = 0; i < pos_copy.size(); i++) {
-			if (!merged[i]) {
-				pos.push_back(pos_copy[i]);
-			}
-		}
-	}*/
-
-	/**
 	 * Makes a thick solid from a polygon.
 	 *
 	 * Thickness is added along the face normal
@@ -333,12 +286,12 @@ namespace rekt {
 	ygl::shape* thicken_polygon(
 		const std::vector<ygl::vec3f>& border,
 		float thickness,
-		const std::vector<std::vector<ygl::vec3f>>& holes = {}
+		const std::vector<std::vector<ygl::vec3f>>& holes = {},
+		bool smooth_normals = true
 	) {
 		auto shape = new ygl::shape();
 		shape->pos = border; 
 		auto face_norm = ygl::normalize(ygl::cross(border[1] - border[0], border[2] - border[1]));
-		face_norm = { 0,1,0 }; // ???
 		// Outer walls
 		for (const auto& p : border) {
 			shape->pos.push_back(p + face_norm*thickness);
@@ -358,6 +311,7 @@ namespace rekt {
 			for (int i = 0; i < hole.size() - 1; i++) {
 				shape->quads.push_back({ ps + i,ps + i + 1,ps + hs + i + 1,ps + hs + i });
 			}
+			shape->quads.push_back({ps+hs-1,ps,ps+hs,ps+hs+hs-1});
 		}
 
 		// Floor and ceiling
@@ -375,8 +329,42 @@ namespace rekt {
 			nt += {int(triangles_pos.size()), int(triangles_pos.size()), int(triangles_pos.size())};
 			shape->triangles.push_back(nt); // New face
 		}
-		//compact_shape(shape->triangles, shape->quads, shape->pos);
-		shape->norm = ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos);
+
+		// Normals
+		float ny = smooth_normals ? 1.f : 0.f;
+		shape->norm = ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos,false);
+		for (int i = 0; i < border.size(); i++) { // Border
+			auto& n = shape->norm[i];
+			shape->norm[i] = ygl::normalize({ n.x, -ny, n.z });
+		}
+		for (int i = border.size(); i < 2*border.size(); i++) {
+			auto& n = shape->norm[i];
+			shape->norm[i] = ygl::normalize({ n.x, ny, n.z });
+		}
+		ps = 2 * border.size();
+		for (const auto& hole : holes) { // Holes
+			int hs = hole.size();
+			for (int i = ps; i < ps + hs; i++) {
+				shape->norm[i] = ygl::normalize({ shape->norm[i].x, -ny, shape->norm[i].z });
+				shape->norm[i + hs] = ygl::normalize({ shape->norm[i + hs].x, ny, shape->norm[i + hs].z });
+			}
+			ps += 2*hs; // Top and bottom of the hole
+		}
+		for (int i = ps; i < ps + triangles_pos.size(); i++) { // Floor and ceiling
+			// Commented code produces formally correct but ugly outputs
+			// Naive all-points comparison to detect points on a border
+			/*float eps = 0.1f;
+			for (int j = 0; j < ps; j++) {
+				if (ygl::length(shape->pos[i] - shape->pos[j]) <= eps) {
+					shape->norm[i] = ygl::normalize({ shape->norm[j].x, -1.f, shape->norm[j].z });
+					shape->norm[i+triangles_pos.size()] = ygl::normalize({ shape->norm[j].x, 1.f, shape->norm[j].z });
+					break;
+				}
+			}*/
+			// Simple shading for now
+			shape->norm[i] = { 0,-1,0 };
+			shape->norm[i + triangles_pos.size()] = { 0,1,0 };
+		}
 		return shape;
 	}
 
