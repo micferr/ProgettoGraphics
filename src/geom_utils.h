@@ -166,26 +166,23 @@ namespace rekt {
 			_points[0] -= ygl::normalize(points[1] - points[0]) * half_width;
 			_points.back() += ygl::normalize(points[points.size() - 1] - points[points.size() - 2]) * half_width;
 		}
-		_points.push_back(2*_points[_points.size()-1] - _points[_points.size()-2]); //p[size] + to(p[last-1], p[last])
+		_points.push_back(2*_points[_points.size()-1] - _points[_points.size()-2]); //p.back() + to(p[p.size()-2], p.back())
 		_points.insert(_points.begin(), _points[0] - (_points[1]-_points[0]));
 		for (int i = 1; i < _points.size() - 1; i++) {
 			const auto& p1 = _points[i - 1];
 			const auto& p2 = _points[i];
 			const auto& p3 = _points[i + 1];
-			auto segment1 = p2 - p1;
-			auto segment2 = p3 - p2;
-			auto alpha1 = atan2f(segment1.y, segment1.x);
-			auto alpha2 = atan2f(segment2.y, segment2.x);
-			auto alpha = (alpha1 + alpha2) / 2;
+			auto p1_to_p3 = p3 - p1;
+			auto alpha = atan2f(p1_to_p3.y, p1_to_p3.x);
 			ygl::vec2f delta = ygl::vec2f{ cos(alpha + pi / 2.f), sin(alpha + pi / 2.f) }*half_width;
-			vertexes.push_back(p2 + delta);
-			vertexes.push_back(p2 - delta);
+			vertexes.push_back(p2 - delta); // Right side of segment
+			vertexes.push_back(p2 + delta); // Left side of segment
 		}
 		std::vector<ygl::vec4i> quads;
 		for (int i = 0; i < vertexes.size()-4; i += 2) {
 			quads.push_back({ i,i + 1,i + 3,i + 2 });
 		}
-		return { quads, to_3d(vertexes,0,false) };
+		return { quads, to_3d(vertexes) };
 	}
 
 	std::vector<ygl::vec3f> make_wide_line_border(
@@ -195,7 +192,9 @@ namespace rekt {
 	) {
 		auto pos = std::get<1>(make_wide_line(points, width, lengthen_ends));
 		std::vector<ygl::vec3f> res;
+		// Go forward along the right side of the line...
 		for (int i = 0; i < pos.size(); i += 2) res.push_back(pos[i]);
+		// ...then back along the left side
 		for (int i = pos.size() - 1; i >= 0; i -= 2) res.push_back(pos[i]);
 		return res;
 	}
@@ -248,7 +247,7 @@ namespace rekt {
 			}
 		}
 
-		return { triangles, to_3d(pos) };
+		return { triangles, to_3d(pos, 0, false) };
 	}
 
 	/**
