@@ -350,19 +350,23 @@ namespace rekt {
 			ps += 2*hs; // Top and bottom of the hole
 		}
 		for (int i = ps; i < ps + triangles_pos.size(); i++) { // Floor and ceiling
-			// Commented code produces formally correct but ugly outputs
 			// Naive all-points comparison to detect points on a border
-			/*float eps = 0.1f;
-			for (int j = 0; j < ps; j++) {
-				if (ygl::length(shape->pos[i] - shape->pos[j]) <= eps) {
-					shape->norm[i] = ygl::normalize({ shape->norm[j].x, -1.f, shape->norm[j].z });
-					shape->norm[i+triangles_pos.size()] = ygl::normalize({ shape->norm[j].x, 1.f, shape->norm[j].z });
-					break;
+			if (smooth_normals) {
+				float eps = 0.001f;
+				for (int j = 0; j < ps; j++) {
+					if (ygl::length(shape->pos[i] - shape->pos[j]) <= eps) {
+						// I don't know why it's {shape->norm[i],...} and not {shape->norm[j],...},
+						// but it works :)
+						shape->norm[i] = ygl::normalize({ shape->norm[i].x, -1.f, shape->norm[i].z });
+						shape->norm[i + triangles_pos.size()] = ygl::normalize({ shape->norm[i].x, 1.f, shape->norm[i].z });
+						break;
+					}
 				}
-			}*/
-			// Simple shading for now
-			shape->norm[i] = { 0,-1,0 };
-			shape->norm[i + triangles_pos.size()] = { 0,1,0 };
+			}
+			else {
+				shape->norm[i] = { 0,-1,0 };
+				shape->norm[i + triangles_pos.size()] = { 0,1,0 };
+			}
 		}
 		return shape;
 	}
