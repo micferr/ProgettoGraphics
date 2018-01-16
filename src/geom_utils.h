@@ -290,7 +290,11 @@ namespace rekt {
 	) {
 		auto shape = new ygl::shape();
 		shape->pos = border; 
-		auto face_norm = ygl::normalize(ygl::cross(border[1] - border[0], border[2] - border[1]));
+		auto triangles_data = triangulate(border, holes);
+		const auto& triangles = std::get<0>(triangles_data);
+		const auto& triangles_pos = std::get<1>(triangles_data);
+		auto face_norm = -ygl::normalize(ygl::cross(triangles_pos[1]-triangles_pos[0], triangles_pos[2]-triangles_pos[0]));
+
 		// Outer walls
 		for (const auto& p : border) {
 			shape->pos.push_back(p + face_norm*thickness);
@@ -315,9 +319,6 @@ namespace rekt {
 
 		// Floor and ceiling
 		ps = shape->pos.size();
-		auto triangles_data = triangulate(border, holes);
-		const auto& triangles = std::get<0>(triangles_data);
-		const auto& triangles_pos = std::get<1>(triangles_data);
 		ygl::vec3i psize3 = { ps,ps,ps };
 		ygl::vec4i psize4 = { ps,ps,ps,ps };
 		shape->pos.insert(shape->pos.end(), triangles_pos.begin(), triangles_pos.end()); // Floor
