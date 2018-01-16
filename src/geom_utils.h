@@ -173,7 +173,7 @@ namespace rekt {
 			const auto& p2 = _points[i];
 			const auto& p3 = _points[i + 1];
 			auto p1_to_p3 = p3 - p1;
-			auto alpha = atan2f(p1_to_p3.y, p1_to_p3.x);
+			auto alpha = atan2f(p1_to_p3.y, p1_to_p3.x); // Angle from p1 to p3
 			ygl::vec2f delta = ygl::vec2f{ cos(alpha + pi / 2.f), sin(alpha + pi / 2.f) }*half_width;
 			vertexes.push_back(p2 - delta); // Right side of segment
 			vertexes.push_back(p2 + delta); // Left side of segment
@@ -288,14 +288,16 @@ namespace rekt {
 		const std::vector<std::vector<ygl::vec3f>>& holes = {},
 		bool smooth_normals = true
 	) {
-		auto shape = new ygl::shape();
-		shape->pos = border; 
+		// Triangulate floor surface
 		auto triangles_data = triangulate(border, holes);
 		const auto& triangles = std::get<0>(triangles_data);
 		const auto& triangles_pos = std::get<1>(triangles_data);
+		// Border vertexes are not reliable (e.g non-convex polygons)
 		auto face_norm = -ygl::normalize(ygl::cross(triangles_pos[1]-triangles_pos[0], triangles_pos[2]-triangles_pos[0]));
 
 		// Outer walls
+		auto shape = new ygl::shape();
+		shape->pos = border;
 		for (const auto& p : border) {
 			shape->pos.push_back(p + face_norm*thickness);
 		}
