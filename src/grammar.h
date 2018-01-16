@@ -103,6 +103,14 @@ namespace rekt {
 	};
 
 	template<typename T>
+	struct production_rule {
+		T from;
+		std::vector<T> to;
+
+		float weight; // Relative probability for this rule to be chosen to derive 'from'
+	};
+
+	template<typename T>
 	class grammar {
 		T S;
 		map<T, vector<vector<T>>> prods;
