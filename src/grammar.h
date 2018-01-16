@@ -107,7 +107,9 @@ namespace rekt {
 		T from;
 		std::vector<T> to;
 
-		float weight; // Relative probability for this rule to be chosen to derive 'from'
+		// This rule should be chosen, when deriving 'from' with probability
+		// weight / (sum_{pr in production_rules with pr.from = this.from} pr.weight)
+		float weight;
 	};
 
 	template<typename T>
