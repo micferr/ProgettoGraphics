@@ -84,8 +84,7 @@ namespace rekt {
 		float radius = 1.f,
 		bool xz_aligned = false
 	) {
-		auto poly = to_3d(make_regular_polygon(num_sides, radius, xz_aligned));
-		return poly;
+		return to_3d(make_regular_polygon(num_sides, radius, xz_aligned));
 	}
 
 	std::vector<ygl::vec2f> make_quad(float side_length = 1.f) {
@@ -183,6 +182,31 @@ namespace rekt {
 			quads.push_back({ i,i + 1,i + 3,i + 2 });
 		}
 		return { quads, to_3d(vertexes) };
+	}
+
+	/**
+	 * Merges collinear consecutive sides in a polygon.
+	 *
+	 * It is assumed that the polygon is well-formed (e.g. the vertexes are not all
+	 * collinear)
+	 */
+	void clean_collinear_vertexes(std::vector<ygl::vec2f>& points, float alpha_eps = 0.001f) {
+		points.push_back(points[0]); // Easier to loop on all sides
+		for (int i = 1; i < points.size()-1; i++) {
+			auto segment1 = points[i] - points[i - 1];
+			auto segment2 = points[i + 1] - points[i];
+			auto segment_tot = points[i + 1] - points[i - 1];
+			float alpha1 = atan2f(segment1.y, segment1.x);
+			float alpha2 = atan2f(segment2.y, segment2.x);
+			float alpha_tot = atan2f(segment_tot.y, segment_tot.x);
+			if (fabs(alpha_tot-alpha2) <= alpha_eps) {
+				points.erase(points.begin() + i);
+			}
+			else {
+				i++;
+			}
+		}
+		points.pop_back(); // Take out the point we added at the beginning
 	}
 
 	std::vector<ygl::vec3f> make_wide_line_border(
