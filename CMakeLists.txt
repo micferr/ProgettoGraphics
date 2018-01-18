@@ -53,8 +53,10 @@ endif(UNIX AND NOT APPLE)
 add_library(yocto_gl
 	src/grammar.h
 	src/node.h
+	src/building_utils.h
 	src/geom_utils.h
 	src/prob_utils.h
+	src/yocto_utils.h
 
 	src/yocto/yocto_gl.h
 	src/yocto/yocto_gl.cpp
