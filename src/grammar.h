@@ -13,7 +13,7 @@ namespace rekt {
 	using std::vector;
 	using std::map;
 	using std::queue;
-
+	using std::pair;
 
 	class attributes {
 		map<string, int> attribs_i;
@@ -107,7 +107,7 @@ namespace rekt {
 		T from;
 		std::vector<T> to;
 
-		// This rule should be chosen, when deriving 'from' with probability
+		// This rule should be chosen, when deriving 'from', with probability
 		// weight / (sum_{pr in production_rules with pr.from = this.from} pr.weight)
 		float weight;
 	};
@@ -115,7 +115,7 @@ namespace rekt {
 	template<typename T>
 	class grammar {
 		T S;
-		map<T, vector<vector<T>>> prods;
+		map<T, vector<production_rule<T>>> prods;
 
 	public:
 		grammar(const T& S) : S(S) {}
@@ -123,23 +123,41 @@ namespace rekt {
 		/**
 		 * Adds a new production rule
 		 */
-		void add_rule(const T& L, const vector<T>& R) {
-			prods[L].push_back(R);
+		void add_rule(const production_rule<T>& rule) {
+			prods[rule.from].push_back(rule);
+		}
+
+		void add_rule(const T& from, const vector<T>& to, float weight = 1.f) {
+			add_rule({ from,to,weight });
 		}
 
 		/**
 		 * Adds multiple production rules
 		 */
+		void add_rules(const vector<production_rule<T>>& rules) {
+			for (const auto& rule : rules) add_rule(rule);
+		}
+		
 		void add_rules(const T& L, const vector<vector<T>>& R) {
-			for (auto& r : R) {
-				add_rule(L, r);
+			for (const auto& r : R) {
+				add_rule({ L, r, 1.f });
 			}
 		}
 
+		void add_rules(const T& L, const vector<pair<vector<T>, float>>& productions) {
+			for (const auto& prod : productions) {
+				add_rule({ L, prod.first, prod.second });
+			}
+		}
+
+		// Whether the symbol is terminal, i.e. it is not the left side
+		// of any production rule
 		bool is_terminal(const T& value) {
 			return prods.count(value) == 0;
 		}
 
+		// Whether the symbol is variable for the grammar, i.e. it is
+		// the left side of a production rule
 		bool is_variable(const T& value) {
 			return !is_terminal(value);
 		}
@@ -165,7 +183,7 @@ namespace rekt {
 					auto& prod = prods.find(n->value);
 					auto& prod_rules = (*prod).second;
 					auto& substitution = prod_rules[rand() % prod_rules.size()];
-					for (auto& child_value : substitution) {
+					for (auto& child_value : substitution.to) {
 						n->add_child(child_value);
 						nodes.push(n->children.back());
 					}
