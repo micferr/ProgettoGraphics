@@ -482,6 +482,7 @@ namespace rekt {
 		s1->pos.insert(s1->pos.end(), s2->pos.begin(), s2->pos.end());
 		s1->texcoord.insert(s1->texcoord.end(), s2->texcoord.begin(), s2->texcoord.end());
 		s1->norm.insert(s1->norm.end(), s2->norm.begin(), s2->norm.end());
+		s1->color.insert(s1->color.end(), s2->color.begin(), s2->color.end());
 	}
 
 	/**
