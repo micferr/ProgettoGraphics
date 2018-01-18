@@ -17,6 +17,33 @@ namespace rekt {
 		return m;
 	}
 
+	void add_light(ygl::scene* scn, const ygl::vec3f& pos, const ygl::vec3f& ke, const std::string& name) {
+		ygl::shape* lshp = new ygl::shape{ name + "_shape" };
+		lshp->pos.push_back(pos);
+		lshp->points.push_back(0);
+		lshp->color = { {1,1,1,1} };
+		ygl::light* light = new ygl::light();
+		ygl::instance* llinst = new ygl::instance();
+		llinst->frame = ygl::identity_frame3f;
+		llinst->name = name + "_instance";
+		llinst->shp = lshp;
+		ygl::environment* lenv = new ygl::environment();
+		lenv->name = name + "_environment";
+		lenv->frame = ygl::identity_frame3f;
+		lenv->ke = { 1.f,1.f,1.f };
+		auto lmat = new ygl::material();
+		lmat->name = name+"_material";
+		lmat->ke = ke;
+		light->env = lenv;
+		light->ist = llinst;
+		light->ist->shp->mat = lmat;
+		scn->materials.push_back(lmat);
+		scn->shapes.push_back(lshp);
+		scn->instances.push_back(llinst);
+		scn->environments.push_back(lenv);
+		scn->lights.push_back(light);
+	}
+
 }
 
 #endif // YOCTO_UTILS
