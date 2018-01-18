@@ -1,5 +1,5 @@
-#ifndef YOCTO_UTILS
-#define YOCTO_UTILS
+#ifndef YOCTO_UTILS_H
+#define YOCTO_UTILS_H
 
 #include "yocto\yocto_gl.h"
 
@@ -46,4 +46,4 @@ namespace rekt {
 
 }
 
-#endif // YOCTO_UTILS
+#endif // YOCTO_UTILS_H
