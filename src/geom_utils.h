@@ -52,6 +52,13 @@ namespace rekt {
 	}
 
 	/**
+	 * Swaps the Y and Z components of the input points
+	 */
+	void swap_yz(std::vector<ygl::vec3f>& points) {
+		for (auto& p : points) p = { p.x, p.z, p.y };
+	}
+
+	/**
 	 * Return the points of a 2D polygon.
 	 * The first point is set at (radius,0) if the polygon is not aligned,
 	 * else it's at radius*(cos(a),sin(a)), a = 2*pi/(2*num_sides)
@@ -402,12 +409,12 @@ namespace rekt {
  * If origin_center is true, the model is centered on (0,0,0),
  * else its center is (width,height,depth)/2
  */
-#define DEFAULT_ORIGIN_CENTER true
+#define DEFAULT_ORIGIN_CENTER false
 
 	std::tuple<std::vector<ygl::vec4i>, std::vector<ygl::vec3f>> 
 		make_parallelepidedon(
-			float x, float y, float z,
 			float width, float height, float depth,
+			float x = 0.f, float y = 0.f, float z = 0.f,
 			bool origin_center = DEFAULT_ORIGIN_CENTER
 		) {
 		auto t = ygl::make_cube();
@@ -427,6 +434,23 @@ namespace rekt {
 	}
 
 #undef DEFAULT_ORIGIN_CENTER
+
+	/**
+	 * Merges the second shape into the first
+	 */
+	void merge_shapes(
+		ygl::shape* s1, 
+		ygl::shape* s2
+	) {
+		std::tie(s1->lines, s1->triangles, s1->quads) = ygl::merge_elems(
+			s1->pos.size(), 
+			s1->lines, s1->triangles, s1->quads,
+			s2->lines, s2->triangles, s2->quads
+		);
+		s1->pos.insert(s1->pos.end(), s2->pos.begin(), s2->pos.end());
+		s1->texcoord.insert(s1->texcoord.end(), s2->texcoord.begin(), s2->texcoord.end());
+		s1->norm.insert(s1->norm.end(), s2->norm.begin(), s2->norm.end());
+	}
 
 	/**
 	 * Adds equilateral triangles on each side of the given polygon.
