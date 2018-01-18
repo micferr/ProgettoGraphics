@@ -295,6 +295,38 @@ namespace rekt {
 	}
 
 	/**
+	 * Moves the points so that they're centered on the specified axes
+	 */
+	void center_points(
+		std::vector<ygl::vec3f>& points, 
+		bool x = true, bool y = true, bool z = true,
+		bool weighted = true
+	) {
+		if (!points.size()) return;
+
+		ygl::vec3f disp = { 0,0,0 };
+		if (weighted) {
+			disp = -centroid(points);
+		}
+		else {
+			auto min = points[0], max = points[0];
+			for (const auto& p : points) {
+				if (p.x < min.x) min.x = p.x;
+				if (p.x > max.x) max.x = p.x;
+				if (p.y < min.y) min.y = p.y;
+				if (p.y > max.y) max.y = p.y;
+				if (p.z < min.z) min.z = p.z;
+				if (p.z > max.z) max.z = p.z;
+			}
+			disp = -(max - min);
+		}
+		if (!x) disp.x = 0.f;
+		if (!y) disp.y = 0.f;
+		if (!z) disp.z = 0.f;
+		displace(points, disp);
+	}
+
+	/**
 	* Rotates all points by 'angle' radiants, counter-clockwise relative to (0,0)
 	*
 	* The function is quite inefficient, to rotate an in-world instance try changing
