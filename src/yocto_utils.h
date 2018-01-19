@@ -44,6 +44,19 @@ namespace rekt {
 		scn->lights.push_back(light);
 	}
 
+	/**
+	 * Sets default values for missing shape elements
+	 */
+	void set_default_values(ygl::shape* shp) {
+		auto size = shp->pos.size();
+		if (shp->norm.size() < size)
+			shp->norm.insert(shp->norm.end(), size - shp->norm.size(), { 0,0,0 });
+		if (shp->texcoord.size() < size)
+			shp->texcoord.insert(shp->texcoord.end(), size - shp->texcoord.size(), { 0,0 });
+		if (shp->color.size() < size)
+			shp->color.insert(shp->color.end(), size - shp->color.size(), { 0,0,0,0 });
+	}
+
 }
 
 #endif // YOCTO_UTILS_H
