@@ -284,8 +284,11 @@ namespace rekt {
 	/**
 	 * Moves all points by the specified value
 	 */
-	template<typename T>
-	void displace(std::vector<T>& points, T& disp) {
+	void displace(std::vector<ygl::vec2f>& points, const ygl::vec2f& disp) {
+		for (auto& p : points) p += disp;
+	}
+
+	void displace(std::vector<ygl::vec3f>& points, const ygl::vec3f& disp) {
 		for (auto& p : points) p += disp;
 	}
 
