@@ -471,11 +471,37 @@ namespace rekt {
 #undef DEFAULT_ORIGIN_CENTER
 
 	/**
+	 * Merges duplicates points in a shape
+	 *
+	 * TODO: Remove duplicates from shp->pos
+	 */
+	void merge_same_points(ygl::shape* shp, float eps = 0.0001f) {
+		for (int i = 0; i < shp->pos.size(); i++) {
+			for (int j = i + 1; j < shp->pos.size(); j++) {
+				if (ygl::length(shp->pos[i] - shp->pos[j]) < eps) {
+					for (auto& t : shp->triangles) {
+						for (auto& p : t) if (p == j) p = i;
+					}
+					for (auto& q : shp->quads) {
+						for (auto& p : q) if (p == j) p = i;
+					}
+					for (auto& l : shp->lines) {
+						for (auto& p : l) if (p == j) p = i;
+					}
+					for (auto& p : shp->points) if (p == j) p = i;
+				}
+			}
+		}
+		shp->norm = ygl::compute_normals(shp->lines, shp->triangles, shp->quads, shp->pos);
+	}
+
+	/**
 	 * Merges the second shape into the first
 	 */
 	void merge_shapes(
 		ygl::shape* s1, 
-		ygl::shape* s2
+		ygl::shape* s2,
+		bool merge_points = true
 	) {
 		std::tie(s1->lines, s1->triangles, s1->quads) = ygl::merge_elems(
 			s1->pos.size(), 
@@ -486,6 +512,9 @@ namespace rekt {
 		s1->texcoord.insert(s1->texcoord.end(), s2->texcoord.begin(), s2->texcoord.end());
 		s1->norm.insert(s1->norm.end(), s2->norm.begin(), s2->norm.end());
 		s1->color.insert(s1->color.end(), s2->color.begin(), s2->color.end());
+		if (merge_points) {
+			merge_same_points(s1);
+		}
 	}
 
 	/**
