@@ -56,6 +56,26 @@ namespace rekt {
 		return shp; 
 	}
 
+	/**
+	 * Hip depth must be strictly less than both the first and last 
+	 * floor's main segments' length.
+	 */
+	ygl::shape* make_roof_crosshipped_simple(
+		const std::vector<ygl::vec2f>& floor_main_points,
+		float floor_width,
+		float center_height,
+		float hip_depth,
+		float base_height = 0.f
+	) {
+		auto shp = make_roof_crossgabled_simple(
+			floor_main_points, floor_width, center_height, base_height
+		);
+		auto fr = 2*floor_main_points.size(); // First roof point
+		auto lr = shp->pos.size() - 1; // Last roof point
+		shp->pos[fr] += ygl::normalize(shp->pos[fr + 1] - shp->pos[fr])*hip_depth;
+		shp->pos[lr] -= ygl::normalize(shp->pos[lr] - shp->pos[lr - 1])*hip_depth;
+		return shp;
+	}
 }
 
 #endif // BUILDING_UTILS_H
