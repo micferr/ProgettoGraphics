@@ -163,7 +163,7 @@ namespace rekt {
 	std::tuple<std::vector<ygl::vec4i>, std::vector<ygl::vec3f>> make_wide_line(
 		const std::vector<ygl::vec2f>& points,
 		float width,
-		bool lengthen_ends = false
+		bool lengthen_ends = true
 	) {
 		auto half_width = width / 2.f;
 		auto _points = points; // Work-around to keep code cleaner :)
@@ -219,7 +219,7 @@ namespace rekt {
 	std::vector<ygl::vec3f> make_wide_line_border(
 		const std::vector<ygl::vec2f>& points,
 		float width,
-		bool lengthen_ends = false
+		bool lengthen_ends = true
 	) {
 		auto pos = std::get<1>(make_wide_line(points, width, lengthen_ends));
 		std::vector<ygl::vec3f> res;

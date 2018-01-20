@@ -58,7 +58,8 @@ namespace rekt {
 
 	/**
 	 * Hip depth must be strictly less than both the first and last 
-	 * floor's main segments' length.
+	 * floor's main segments' length + floor_width/2 (floor_width/2 because of
+	 * lengthened ends)
 	 */
 	ygl::shape* make_roof_crosshipped_simple(
 		const std::vector<ygl::vec2f>& floor_main_points,
