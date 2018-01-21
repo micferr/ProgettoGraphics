@@ -44,6 +44,13 @@ namespace rekt {
 		scn->lights.push_back(light);
 	}
 
+	void set_shape_color(ygl::shape* shp, const ygl::vec4f& color) {
+		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
+	}
+
+	void set_shape_color(ygl::shape* shp, const ygl::vec3f& color) {
+		set_shape_color(shp, { color.x, color.y, color.z, 1.f });
+	}
 }
 
 #endif // YOCTO_UTILS_H
