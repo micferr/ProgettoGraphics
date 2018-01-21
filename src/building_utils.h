@@ -22,9 +22,13 @@ namespace rekt {
 	ygl::shape* make_roof_crossgabled_simple(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
-		float center_height,
+		float roof_angle,
 		float base_height = 0.f
 	) {
+		if (roof_angle <= 0.f || roof_angle >= rekt::pi / 2.f) {
+			throw std::runtime_error("Invalid roof angle");
+		}
+		float center_height = tanf(roof_angle)*floor_width / 2.f;
 		auto _floor_main_points = to_3d(floor_main_points);
 		ygl::shape* shp = new ygl::shape();
 		shp->pos = rekt::make_wide_line_border(floor_main_points, floor_width);
@@ -76,6 +80,17 @@ namespace rekt {
 		shp->pos[fr] += ygl::normalize(shp->pos[fr + 1] - shp->pos[fr])*hip_depth;
 		shp->pos[lr] -= ygl::normalize(shp->pos[lr] - shp->pos[lr - 1])*hip_depth;
 		return shp;
+	}
+
+	ygl::shape* make_roof_crossgabled_thickness(
+		const std::vector<ygl::vec2f>& floor_main_points,
+		float floor_width,
+		float center_height,
+		float rake_overhang,
+		float roof_overhang,
+		float base_height = 0.f
+	) {
+		return nullptr;
 	}
 }
 
