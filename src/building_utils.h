@@ -68,12 +68,12 @@ namespace rekt {
 	ygl::shape* make_roof_crosshipped_simple(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
-		float center_height,
+		float roof_angle,
 		float hip_depth,
 		float base_height = 0.f
 	) {
 		auto shp = make_roof_crossgabled_simple(
-			floor_main_points, floor_width, center_height, base_height
+			floor_main_points, floor_width, roof_angle, base_height
 		);
 		auto fr = 2*floor_main_points.size(); // First roof point
 		auto lr = shp->pos.size() - 1; // Last roof point
@@ -85,7 +85,7 @@ namespace rekt {
 	ygl::shape* make_roof_crossgabled_thickness(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
-		float center_height,
+		float roof_angle,
 		float rake_overhang,
 		float roof_overhang,
 		float base_height = 0.f
