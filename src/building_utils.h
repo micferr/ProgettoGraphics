@@ -86,11 +86,112 @@ namespace rekt {
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
 		float roof_angle,
+		float thickness,
 		float rake_overhang,
 		float roof_overhang,
 		float base_height = 0.f
 	) {
-		return nullptr;
+		if (rake_overhang < 0.f || roof_overhang < 0.f) {
+			throw std::runtime_error("Invalid arguments.");
+		}
+		float center_height = tanf(roof_angle)*floor_width / 2.f;
+		auto floor_border = make_wide_line_border(floor_main_points, floor_width);
+		auto shp = new ygl::shape();
+		
+		// Law of sines: 
+		//		a/sin(A) = b/sin(B) = c/sin(C), where a,b and c are the lengths
+		//		of the sides and A,B and C are the opposite angles
+		// We calculate the thickened roof's top height as follows:
+		//		Let ABC be a triangle with:
+		//		- a : thickness segment
+		//		- b : height segment
+		//		- c : segment between a and b
+		//		Then:
+		//		- C = roof_angle
+		//		- B = pi/2
+		//		- A = pi - C - A = pi - pi/2 - roof_angle = pi/2 - roof_angle
+		//		For the law of sines, a/sin(A) = b/sin(B) = b/sin(pi/2) = b
+		//		-> b = a/sin(A) = thickness / sin(pi/2 - roof_angle)
+		auto thick_height = thickness / sinf(rekt::pi / 2.f - roof_angle);
+		auto thick_width = thickness / sinf(roof_angle); // Same calculations
+
+		// For each main point we generate six vertexes:
+		// - The original right, left and top, with overhangs
+		// - As above, but including thickness
+		shp->pos.push_back(floor_border[0]);
+		shp->pos.push_back(floor_border.back());
+		shp->pos.push_back(
+			(floor_border[0] + floor_border.back()) / 2.f + 
+			ygl::vec3f{0, center_height, 0}
+		);
+		auto to_right = ygl::normalize(floor_border[0] - floor_border.back());
+		shp->pos.push_back(shp->pos[0] + to_right*thick_width);
+		shp->pos.push_back(shp->pos[1] - to_right*thick_width);
+		shp->pos.push_back(shp->pos[2] + ygl::vec3f{0, thick_height, 0});
+
+		for (int i = 0, j = floor_border.size()-1; i < j-2; i++, j--) {
+			// Six new points again, for the next main point
+			auto midpoint_next = (floor_border[i + 1] + floor_border[j - 1]) / 2.f;
+			midpoint_next += {0, center_height, 0};
+			auto ps = shp->pos.size(); // For readability
+			shp->pos.push_back(floor_border[i+1]);
+			shp->pos.push_back(floor_border[j-1]);
+			shp->pos.push_back(midpoint_next);
+			to_right = ygl::normalize(floor_border[i + 1] - floor_border[j - 1]);
+			shp->pos.push_back(shp->pos[ps] + to_right*thick_width);
+			shp->pos.push_back(shp->pos[ps + 1] - to_right*thick_width);
+			shp->pos.push_back(shp->pos[ps + 2] + ygl::vec3f{0, thick_height, 0});
+
+			//Faces
+			int bi = ps - 6; // First index to put in the following quads
+			                 // floor_border[i]
+			// Internal quads (they're seen from below)
+			shp->quads.push_back({ bi,bi + 2,bi + 8,bi + 6 });
+			shp->quads.push_back({ bi + 1,bi + 2,bi + 8,bi + 7 });
+			// Upper quads (seen from above)
+			shp->quads.push_back({ bi + 3, bi + 9, bi + 11, bi + 5 });
+			shp->quads.push_back({ bi + 4,bi + 5,bi + 11,bi + 10 });
+			// Bottom flat quads (seen from below)
+			shp->quads.push_back({ bi + 1,bi + 4,bi + 10,bi + 7 });
+			shp->quads.push_back({ bi,bi + 6,bi + 9,bi + 3 });
+			// Vertical, front-facing
+			if (i == 0) { // Skip hidden faces
+				shp->quads.push_back({ bi + 1,bi + 2,bi + 5,bi + 4 });
+				shp->quads.push_back({ bi,bi + 3,bi + 5,bi + 2 });
+			}
+			// Vertical, rear-facing
+			if (i == j - 3) {
+				shp->quads.push_back({ bi + 6,bi + 8,bi + 11,bi + 9 });
+				shp->quads.push_back({ bi + 7,bi + 8,bi + 11,bi + 10 });
+			}
+		}
+		shp->norm = ygl::compute_normals({}, {}, shp->quads, shp->pos);
+		if (base_height != 0.f) {
+			rekt::displace(shp->pos, { 0,base_height,0 });
+		}
+		if (rake_overhang > 0.f) {
+			auto dir = ygl::normalize(shp->pos[6] - shp->pos[0]);
+			for (int i = 0; i < 6; i++) {
+				shp->pos[i] -= dir*rake_overhang;
+			}
+			dir = ygl::normalize(shp->pos[shp->pos.size() - 1] - shp->pos[shp->pos.size() - 7]);
+			for (int i = shp->pos.size() - 6; i < shp->pos.size(); i++) {
+				shp->pos[i] += dir*rake_overhang;
+			}
+		}
+		if (roof_overhang > 0.f) {
+			for (int i = 0; i < shp->pos.size(); i+=6) {
+				auto to_top = ygl::normalize(shp->pos[i + 2] - shp->pos[i]);
+				//Law of sines again
+				auto length = roof_overhang / sinf(rekt::pi / 2.f - roof_angle);
+				shp->pos[i] -= to_top*length;
+				shp->pos[i + 3] -= to_top*length;
+				to_top = { -to_top.x, to_top.y, -to_top.z };
+				shp->pos[i + 1] -= to_top*length;
+				shp->pos[i + 4] -= to_top*length;
+			}
+		}
+		return shp;
 	}
 }
 
