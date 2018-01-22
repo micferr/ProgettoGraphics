@@ -6,12 +6,12 @@
 namespace rekt {
 
 	ygl::material* make_material(const std::string& name, const ygl::vec3f& kd,
-		const std::string& kd_txt, const ygl::vec3f& ks = { 0.2f, 0.2f, 0.2f },
+		ygl::texture* kd_txt = nullptr, const ygl::vec3f& ks = { 0.2f, 0.2f, 0.2f },
 		float rs = 0.01f) {
 		ygl::material* m = new ygl::material();
 		m->name = name;
 		m->kd = kd;
-		m->kd_txt = ygl::texture_info{ nullptr };
+		m->kd_txt.txt = kd_txt;
 		m->ks = ks;
 		m->rs = rs;
 		return m;
@@ -51,6 +51,7 @@ namespace rekt {
 	void set_shape_color(ygl::shape* shp, const ygl::vec3f& color) {
 		set_shape_color(shp, { color.x, color.y, color.z, 1.f });
 	}
+
 }
 
 #endif // YOCTO_UTILS_H
