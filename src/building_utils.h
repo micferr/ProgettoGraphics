@@ -23,7 +23,8 @@ namespace rekt {
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
 		float roof_angle,
-		float base_height = 0.f
+		float base_height = 0.f,
+		const ygl::vec4f& color = {1,1,1,1}
 	) {
 		if (roof_angle <= 0.f || roof_angle >= rekt::pi / 2.f) {
 			throw std::runtime_error("Invalid roof angle");
@@ -57,6 +58,7 @@ namespace rekt {
 			displace(shp->pos, { 0,base_height,0 });
 		}
 		shp->norm = ygl::compute_normals({}, shp->triangles, shp->quads, shp->pos);
+		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
 		return shp; 
 	}
 
@@ -70,7 +72,8 @@ namespace rekt {
 		float floor_width,
 		float roof_angle,
 		float hip_depth,
-		float base_height = 0.f
+		float base_height = 0.f,
+		const ygl::vec4f& color = {1,1,1,1}
 	) {
 		auto shp = make_roof_crossgabled_simple(
 			floor_main_points, floor_width, roof_angle, base_height
@@ -79,6 +82,8 @@ namespace rekt {
 		auto lr = shp->pos.size() - 1; // Last roof point
 		shp->pos[fr] += ygl::normalize(shp->pos[fr + 1] - shp->pos[fr])*hip_depth;
 		shp->pos[lr] -= ygl::normalize(shp->pos[lr] - shp->pos[lr - 1])*hip_depth;
+		shp->norm = ygl::compute_normals({}, shp->triangles, shp->quads, shp->pos);
+		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
 		return shp;
 	}
 
@@ -89,7 +94,8 @@ namespace rekt {
 		float thickness,
 		float rake_overhang,
 		float roof_overhang,
-		float base_height = 0.f
+		float base_height = 0.f,
+		const ygl::vec4f& color = {1,1,1,1}
 	) {
 		if (rake_overhang < 0.f || roof_overhang < 0.f) {
 			throw std::runtime_error("Invalid arguments.");
@@ -165,7 +171,6 @@ namespace rekt {
 				shp->quads.push_back({ bi + 7,bi + 8,bi + 11,bi + 10 });
 			}
 		}
-		shp->norm = ygl::compute_normals({}, {}, shp->quads, shp->pos);
 		if (base_height != 0.f) {
 			rekt::displace(shp->pos, { 0,base_height,0 });
 		}
@@ -191,6 +196,48 @@ namespace rekt {
 				shp->pos[i + 4] -= to_top*length;
 			}
 		}
+		shp->norm = ygl::compute_normals({}, {}, shp->quads, shp->pos);
+		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
+		return shp;
+	}
+
+	ygl::shape* make_floors(
+		const std::vector<ygl::vec2f>& floor_main_points,
+		float floor_width,
+		unsigned num_floors,
+		float floor_height,
+		float beltcourse_height,
+		float beltcourse_additional_width,
+		const ygl::vec4f& floor_color = { 1,1,1,1 },
+		const ygl::vec4f& belt_color = { 1,1,1,1 }
+	) {
+		if (floor_width <= 0.f || num_floors <= 0 ||
+			floor_height <= 0.f || beltcourse_height < 0.f) {
+			throw std::runtime_error("Invalid arguments");
+		}
+		auto floor = thicken_polygon(
+			make_wide_line_border(floor_main_points, floor_width),
+			floor_height
+		);
+		floor->norm = ygl::compute_normals({}, floor->triangles, floor->quads, floor->pos);
+		floor->color = std::vector<ygl::vec4f>(floor->pos.size(), floor_color);
+		auto belt = thicken_polygon(
+			make_wide_line_border(floor_main_points, floor_width + beltcourse_additional_width),
+			beltcourse_height
+		);
+		belt->norm = ygl::compute_normals({}, belt->triangles, belt->quads, belt->pos);
+		belt->color = std::vector<ygl::vec4f>(belt->pos.size(), belt_color);
+		displace(belt->pos, { 0,floor_height,0 });
+		auto shp = new ygl::shape();
+		merge_shapes(shp, floor);
+		for (int i = 1; i < num_floors; i++) {
+			merge_shapes(shp, belt);
+			displace(belt->pos, { 0,floor_height + beltcourse_height,0 });
+			displace(floor->pos, { 0,floor_height + beltcourse_height,0 });
+			merge_shapes(shp, floor);
+		}
+		delete floor;
+		delete belt;
 		return shp;
 	}
 }
