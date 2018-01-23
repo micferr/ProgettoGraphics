@@ -19,8 +19,11 @@ namespace rekt {
 
 	void add_light(ygl::scene* scn, const ygl::vec3f& pos, const ygl::vec3f& ke, const std::string& name) {
 		ygl::shape* lshp = new ygl::shape{ name + "_shape" };
-		lshp->pos.push_back(pos);
-		lshp->points.push_back(0);
+		//lshp->pos.push_back(pos);
+		//lshp->points.push_back(0);
+		lshp->pos = { {-1,0,1},{1,0,1},{1,0,-1},{-1,0,-1} };
+		for (auto& p : lshp->pos) p += pos;
+		lshp->quads.push_back({ 0,1,2,3 });
 		lshp->color = { {1,1,1,1} };
 		ygl::light* light = new ygl::light();
 		ygl::instance* llinst = new ygl::instance();
