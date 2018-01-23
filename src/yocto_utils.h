@@ -55,6 +55,29 @@ namespace rekt {
 		set_shape_color(shp, { color.x, color.y, color.z, 1.f });
 	}
 
+	void set_shape_normals(ygl::shape* shp) {
+		shp->norm = ygl::compute_normals(
+			shp->lines, shp->triangles, shp->quads, shp->pos
+		);
+	}
+
+	/**
+	 * Returns the angle between the vector and the x axis
+	 */
+	float get_angle(const ygl::vec2f& v) {
+		return atan2f(v.y, v.x);
+	}
+
+	void print_shape(const ygl::shape* shp) {
+		printf("Vertexes: (pos and norm)\n");
+		for (int i = 0; i < shp->pos.size(); i++) {
+			ygl::println("{} | {} - {}", i, shp->pos[i], shp->norm[i]);
+		}
+		printf("Faces:\n");
+		for (const auto& p : shp->points) ygl::println("{}", p);
+		for (const auto& t : shp->triangles) ygl::println("{}", t);
+		for (const auto& q : shp->quads) ygl::println("{}", q);
+	}
 }
 
 #endif // YOCTO_UTILS_H
