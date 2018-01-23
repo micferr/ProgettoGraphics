@@ -9,14 +9,14 @@
 namespace rekt {
 	const float pi = 3.14159265359f;
 
-	ygl::vec2f centroid(std::vector<ygl::vec2f>& points) {
+	ygl::vec2f centroid(const std::vector<ygl::vec2f>& points) {
 		// Average of the input points
 		ygl::vec2f c = { 0,0 };
 		for (auto& p : points) c += p;
 		return c / points.size();
 	}
 
-	ygl::vec3f centroid(std::vector<ygl::vec3f>& points) {
+	ygl::vec3f centroid(const std::vector<ygl::vec3f>& points) {
 		ygl::vec3f c = { 0,0,0 };
 		for (auto& p : points) c += p;
 		return c / points.size();
@@ -25,12 +25,16 @@ namespace rekt {
 	/**
 	* Discards the y component of 3d points
 	*/
+	ygl::vec2f to_2d(const ygl::vec3f& point, bool flip_y = true) {
+		return { point.x, flip_y ? -point.z : point.z };
+	}
+
 	std::vector<ygl::vec2f> to_2d(
-		const std::vector<ygl::vec3f>& points
+		const std::vector<ygl::vec3f>& points, bool flip_y = true
 	) {
 		std::vector<ygl::vec2f> res;
 		for (const auto& p : points) {
-			res.push_back({ p.x, p.z });
+			res.push_back(to_2d(p,flip_y));
 		}
 		return res;
 	}
@@ -39,6 +43,10 @@ namespace rekt {
 	 * Transforms 2D points (x,z) to 3D points (x,y,-z), with y in input.
 	 * z is flipped by default to preserve clockwiseness
 	 */
+	ygl::vec3f to_3d(const ygl::vec2f& point, float y = 0.f, bool flip_z = true) {
+		return { point.x, y, flip_z ? -point.y : point.y };
+	}
+
 	std::vector<ygl::vec3f> to_3d(
 		const std::vector<ygl::vec2f>& points, 
 		float y = 0.f,
@@ -46,7 +54,7 @@ namespace rekt {
 	) {
 		std::vector<ygl::vec3f> res;
 		for (const auto& p : points) {
-			res.push_back({ p.x, y, flip_z ? -p.y : p.y });
+			res.push_back(to_3d(p, y, flip_z));
 		}
 		return res;
 	}
@@ -231,22 +239,22 @@ namespace rekt {
 	}
 
 	/**
-	 * Triangulates an arbitrary shape.
-	 * Holes must be given in clockwise order
-	 */
-	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec3f>>
+	* Triangulates an arbitrary shape.
+	* Holes must be given in clockwise order
+	*/
+	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec2f>>
 		triangulate(
-			const std::vector<ygl::vec3f>& border,
-			const std::vector<std::vector<ygl::vec3f>>& holes = {}
+			const std::vector<ygl::vec2f>& border,
+			const std::vector<std::vector<ygl::vec2f>>& holes = {}
 		) {
 		// Code adapted from https://github.com/greenm01/poly2tri/blob/master/testbed/main.cc
 		std::vector<p2t::Point*> polyline;
-		for (const auto& p : border) polyline.push_back(new p2t::Point(p.x,p.z));
+		for (const auto& p : border) polyline.push_back(new p2t::Point(p.x, p.y));
 
 		std::vector<std::vector<p2t::Point*>> p2t_holes;
 		for (const auto& hole : holes) {
 			p2t_holes.push_back(std::vector<p2t::Point*>());
-			for (const auto& p : hole) p2t_holes.back().push_back(new p2t::Point(p.x,p.z));
+			for (const auto& p : hole) p2t_holes.back().push_back(new p2t::Point(p.x, p.y));
 		}
 
 		p2t::CDT* cdt = new p2t::CDT(polyline);
@@ -278,7 +286,31 @@ namespace rekt {
 			}
 		}
 
-		return { triangles, to_3d(pos, 0, false) };
+		return { triangles, pos };
+	}
+
+	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec3f>>
+		triangulate(
+			const std::vector<ygl::vec3f>& border,
+			const std::vector<std::vector<ygl::vec3f>>& holes = {}
+		) {
+		std::vector<std::vector<ygl::vec2f>> _holes;
+		for (const auto& h : holes) _holes.push_back(to_2d(h));
+		auto tt = triangulate(to_2d(border), _holes);
+		return { std::get<0>(tt), to_3d(std::get<1>(tt)) };
+	}
+
+	/**
+	 * Triangulates the shape and inverts the triangles' orientation
+	 */
+	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec3f>>
+		triangulate_opposite(
+			const std::vector<ygl::vec3f>& border,
+			const std::vector<std::vector<ygl::vec3f>>& holes = {}
+		) {
+		auto tt = triangulate(border, holes);
+		for (auto& t : std::get<0>(tt)) t = { t.z,t.y,t.x };
+		return tt;
 	}
 
 	/**
@@ -359,7 +391,7 @@ namespace rekt {
 		const auto& triangles = std::get<0>(triangles_data);
 		const auto& triangles_pos = std::get<1>(triangles_data);
 		// Border vertexes are not reliable (e.g non-convex polygons)
-		auto face_norm = -ygl::normalize(ygl::cross(triangles_pos[1]-triangles_pos[0], triangles_pos[2]-triangles_pos[0]));
+		auto face_norm = ygl::normalize(ygl::cross(triangles_pos[1]-triangles_pos[0], triangles_pos[2]-triangles_pos[0]));
 
 		// Outer walls
 		auto shape = new ygl::shape();
