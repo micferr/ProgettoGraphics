@@ -5,6 +5,7 @@
 
 #include "yocto\yocto_gl.h"
 #include "poly2tri\poly2tri\poly2tri.h"
+#include "yocto_utils.h"
 
 namespace rekt {
 	const float pi = 3.14159265359f;
@@ -289,6 +290,7 @@ namespace rekt {
 		return { triangles, pos };
 	}
 
+	// NB: The points' y coordinate is discarded and then assumed to be 0
 	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec3f>>
 		triangulate(
 			const std::vector<ygl::vec3f>& border,
@@ -376,6 +378,53 @@ namespace rekt {
 	}
 
 	/**
+	* Merges duplicates points in a shape
+	*
+	* TODO: Remove duplicates from shp->pos
+	*/
+	void merge_same_points(ygl::shape* shp, float eps = 0.0001f) {
+		for (int i = 0; i < shp->pos.size(); i++) {
+			for (int j = i + 1; j < shp->pos.size(); j++) {
+				if (ygl::length(shp->pos[i] - shp->pos[j]) < eps) {
+					for (auto& t : shp->triangles) {
+						for (auto& p : t) if (p == j) p = i;
+					}
+					for (auto& q : shp->quads) {
+						for (auto& p : q) if (p == j) p = i;
+					}
+					for (auto& l : shp->lines) {
+						for (auto& p : l) if (p == j) p = i;
+					}
+					for (auto& p : shp->points) if (p == j) p = i;
+				}
+			}
+		}
+		shp->norm = ygl::compute_normals(shp->lines, shp->triangles, shp->quads, shp->pos);
+	}
+
+	/**
+	* Merges the second shape into the first
+	*/
+	void merge_shapes(
+		ygl::shape* s1,
+		ygl::shape* s2,
+		bool merge_points = true
+	) {
+		std::tie(s1->lines, s1->triangles, s1->quads) = ygl::merge_elems(
+			s1->pos.size(),
+			s1->lines, s1->triangles, s1->quads,
+			s2->lines, s2->triangles, s2->quads
+		);
+		s1->pos.insert(s1->pos.end(), s2->pos.begin(), s2->pos.end());
+		s1->texcoord.insert(s1->texcoord.end(), s2->texcoord.begin(), s2->texcoord.end());
+		s1->norm.insert(s1->norm.end(), s2->norm.begin(), s2->norm.end());
+		s1->color.insert(s1->color.end(), s2->color.begin(), s2->color.end());
+		if (merge_points) {
+			merge_same_points(s1);
+		}
+	}
+
+	/**
 	 * Makes a thick solid from a polygon.
 	 *
 	 * Thickness is added along the face normal
@@ -431,7 +480,7 @@ namespace rekt {
 		}
 
 		// Normals
-		float ny = smooth_normals ? 1.f : 0.f;
+		/*float ny = smooth_normals ? 1.f : 0.f;
 		shape->norm = ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos,false);
 		for (int i = 0; i < border.size(); i++) { // Border
 			auto& n = shape->norm[i];
@@ -468,7 +517,9 @@ namespace rekt {
 				shape->norm[i] = { 0,-1,0 };
 				shape->norm[i + triangles_pos.size()] = { 0,1,0 };
 			}
-		}
+		}*/
+		merge_same_points(shape);
+		set_shape_normals(shape);
 		return shape;
 	}
 
@@ -501,53 +552,6 @@ namespace rekt {
 	}
 
 #undef DEFAULT_ORIGIN_CENTER
-
-	/**
-	 * Merges duplicates points in a shape
-	 *
-	 * TODO: Remove duplicates from shp->pos
-	 */
-	void merge_same_points(ygl::shape* shp, float eps = 0.0001f) {
-		for (int i = 0; i < shp->pos.size(); i++) {
-			for (int j = i + 1; j < shp->pos.size(); j++) {
-				if (ygl::length(shp->pos[i] - shp->pos[j]) < eps) {
-					for (auto& t : shp->triangles) {
-						for (auto& p : t) if (p == j) p = i;
-					}
-					for (auto& q : shp->quads) {
-						for (auto& p : q) if (p == j) p = i;
-					}
-					for (auto& l : shp->lines) {
-						for (auto& p : l) if (p == j) p = i;
-					}
-					for (auto& p : shp->points) if (p == j) p = i;
-				}
-			}
-		}
-		shp->norm = ygl::compute_normals(shp->lines, shp->triangles, shp->quads, shp->pos);
-	}
-
-	/**
-	 * Merges the second shape into the first
-	 */
-	void merge_shapes(
-		ygl::shape* s1, 
-		ygl::shape* s2,
-		bool merge_points = true
-	) {
-		std::tie(s1->lines, s1->triangles, s1->quads) = ygl::merge_elems(
-			s1->pos.size(), 
-			s1->lines, s1->triangles, s1->quads,
-			s2->lines, s2->triangles, s2->quads
-		);
-		s1->pos.insert(s1->pos.end(), s2->pos.begin(), s2->pos.end());
-		s1->texcoord.insert(s1->texcoord.end(), s2->texcoord.begin(), s2->texcoord.end());
-		s1->norm.insert(s1->norm.end(), s2->norm.begin(), s2->norm.end());
-		s1->color.insert(s1->color.end(), s2->color.begin(), s2->color.end());
-		if (merge_points) {
-			merge_same_points(s1);
-		}
-	}
 
 	/**
 	 * Adds equilateral triangles on each side of the given polygon.

@@ -121,7 +121,7 @@ namespace rekt {
 	ygl::shape* make_roof_pyramid_from_regular(
 		const ygl::vec2f& floor_center,
 		const ygl::vec2f& floor_vertex,
-		int num_sides,
+		unsigned num_sides,
 		float roof_angle,
 		float base_height = 0.f,
 		const ygl::vec4f& color = { 1,1,1,1 }
@@ -280,13 +280,11 @@ namespace rekt {
 			make_wide_line_border(floor_main_points, floor_width),
 			floor_height
 		);
-		floor->norm = ygl::compute_normals({}, floor->triangles, floor->quads, floor->pos);
 		floor->color = std::vector<ygl::vec4f>(floor->pos.size(), floor_color);
 		auto belt = thicken_polygon(
 			make_wide_line_border(floor_main_points, floor_width + beltcourse_additional_width),
 			beltcourse_height
 		);
-		belt->norm = ygl::compute_normals({}, belt->triangles, belt->quads, belt->pos);
 		belt->color = std::vector<ygl::vec4f>(belt->pos.size(), belt_color);
 		displace(belt->pos, { 0,floor_height,0 });
 		auto shp = new ygl::shape();
@@ -297,6 +295,7 @@ namespace rekt {
 			displace(floor->pos, { 0,floor_height + beltcourse_height,0 });
 			merge_shapes(shp, floor);
 		}
+
 		delete floor;
 		delete belt;
 		return shp;
