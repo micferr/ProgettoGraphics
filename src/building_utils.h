@@ -15,6 +15,10 @@
  * are that building's floor's main points.
  * See make_wide_line and make_wide_line_border functions in geom_utils.h for further
  * information.
+ *
+ * A building's floor can also be described by a (center, arbitrary vertex, number of sides)
+ * triple (these are referred to as regular buildings), or directly from all its vertexes. 
+ * These mode may however offer less customizability.
  */
 
 namespace rekt {
@@ -85,6 +89,63 @@ namespace rekt {
 		shp->norm = ygl::compute_normals({}, shp->triangles, shp->quads, shp->pos);
 		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
 		return shp;
+	}
+
+	ygl::shape* make_roof_pyramid_from_border(
+		const std::vector<ygl::vec2f>& border,
+		float roof_height,
+		float base_height = 0.f,
+		const ygl::vec4f& color = { 1,1,1,1 }
+	) {
+		auto shp = new ygl::shape();
+		auto t = triangulate_opposite(to_3d(border), {});
+		shp->triangles = std::get<0>(t);
+		shp->pos = std::get<1>(t);
+		auto c = centroid(border);
+		auto top = to_3d(c, roof_height);
+		shp->pos.push_back(top);
+		int sz = shp->pos.size();
+		shp->pos.push_back(to_3d(border[0]));
+		for (int i = 0; i < border.size()-1; i++) {
+			shp->pos.push_back(to_3d(border[i + 1]));
+			shp->triangles.push_back({ sz + i, sz + i + 1, sz - 1 });
+		}
+		shp->triangles.push_back({ sz + int(border.size()) - 1, sz, sz - 1 });
+		if (base_height > 0.f) displace(shp->pos, { 0,base_height,0 });
+		merge_same_points(shp);
+		set_shape_normals(shp);
+		set_shape_color(shp, color);
+		return shp;
+	}
+
+	ygl::shape* make_roof_pyramid_from_regular(
+		const ygl::vec2f& floor_center,
+		const ygl::vec2f& floor_vertex,
+		int num_sides,
+		float roof_angle,
+		float base_height = 0.f,
+		const ygl::vec4f& color = { 1,1,1,1 }
+	) {
+		auto radius_segment = floor_vertex - floor_center;
+		auto base_angle = get_angle(radius_segment);
+		auto points = make_regular_polygon(num_sides, ygl::length(radius_segment), base_angle);
+		return make_roof_pyramid_from_border(
+			points, tanf(roof_angle)*ygl::length(radius_segment), base_height, color
+		);
+	}
+
+	// Usually not recommended
+	ygl::shape* make_roof_pyramid_from_main_points(
+		const std::vector<ygl::vec2f>& floor_main_points,
+		float floor_width,
+		float roof_height,
+		float base_height = 0.f,
+		const ygl::vec4f& color = { 1,1,1,1 }
+	) {
+		auto border = to_2d(make_wide_line_border(floor_main_points, floor_width));
+		return make_roof_pyramid_from_border(
+			border, roof_height, base_height, color
+		);
 	}
 
 	ygl::shape* make_roof_crossgabled_thickness(
