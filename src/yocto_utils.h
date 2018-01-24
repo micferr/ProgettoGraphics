@@ -19,32 +19,23 @@ namespace rekt {
 
 	void add_light(ygl::scene* scn, const ygl::vec3f& pos, const ygl::vec3f& ke, const std::string& name) {
 		ygl::shape* lshp = new ygl::shape{ name + "_shape" };
-		//lshp->pos.push_back(pos);
-		//lshp->points.push_back(0);
-		lshp->pos = { {-1,0,1},{1,0,1},{1,0,-1},{-1,0,-1} };
-		for (auto& p : lshp->pos) p += pos;
-		lshp->quads.push_back({ 0,1,2,3 });
+		lshp->pos.push_back(pos);
+		lshp->points.push_back(0);
+		lshp->radius.push_back(0.001f);
+		lshp->norm.push_back({ 0,0,1 });
 		lshp->color = { {1,1,1,1} };
-		ygl::light* light = new ygl::light();
-		ygl::instance* llinst = new ygl::instance();
-		llinst->frame = ygl::identity_frame3f;
-		llinst->name = name + "_instance";
-		llinst->shp = lshp;
-		ygl::environment* lenv = new ygl::environment();
-		lenv->name = name + "_environment";
-		lenv->frame = ygl::identity_frame3f;
-		lenv->ke = { 1.f,1.f,1.f };
+		ygl::instance* linst = new ygl::instance();
+		linst->frame = ygl::identity_frame3f;
+		linst->name = name + "_instance";
+		linst->shp = lshp;
 		auto lmat = new ygl::material();
 		lmat->name = name+"_material";
 		lmat->ke = ke;
-		light->env = lenv;
-		light->ist = llinst;
-		light->ist->shp->mat = lmat;
+		lmat->kd = ygl::zero3f;
+		lshp->mat = lmat;
 		scn->materials.push_back(lmat);
 		scn->shapes.push_back(lshp);
-		scn->instances.push_back(llinst);
-		scn->environments.push_back(lenv);
-		scn->lights.push_back(light);
+		scn->instances.push_back(linst);
 	}
 
 	void set_shape_color(ygl::shape* shp, const ygl::vec4f& color) {
