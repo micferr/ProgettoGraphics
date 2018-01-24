@@ -262,6 +262,39 @@ namespace rekt {
 		return shp;
 	}
 
+	std::vector<ygl::vec2f> __make_floor_border_from_main_points(
+		const std::vector<ygl::vec2f>& floor_main_points,
+		float floor_width
+	) {
+		return to_2d(make_wide_line_border(floor_main_points, floor_width));
+	}
+
+	std::vector<ygl::vec2f> __make_floor_border_from_regular(
+		const ygl::vec2f& floor_center,
+		const ygl::vec2f& floor_vertex,
+		unsigned num_sides
+	) {
+		if (num_sides < 3) {
+			throw std::runtime_error("Invalid arguments");
+		}
+		auto segment = floor_vertex - floor_center;
+		auto angle = get_angle(segment);
+		auto radius = ygl::length(segment);
+		std::vector<ygl::vec2f> points;
+		for (int i = 0; i < num_sides; i++) {
+			auto a = angle + 2.f*pi / num_sides*i;
+			points.push_back(ygl::vec2f{ cos(a),sin(a) }*radius + floor_center);
+		}
+		return points;
+	}
+
+	// Just for consistency :)
+	std::vector<ygl::vec2f> __make_floor_border_from_border(
+		const std::vector<ygl::vec2f>& border
+	) {
+		return border;
+	}
+
 	ygl::shape* make_floors(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
