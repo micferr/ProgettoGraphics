@@ -480,7 +480,7 @@ namespace rekt {
 		}
 
 		// Normals
-		/*float ny = smooth_normals ? 1.f : 0.f;
+		float ny = smooth_normals ? 1.f : 0.f;
 		shape->norm = ygl::compute_normals({}, shape->triangles, shape->quads, shape->pos,false);
 		for (int i = 0; i < border.size(); i++) { // Border
 			auto& n = shape->norm[i];
@@ -517,9 +517,9 @@ namespace rekt {
 				shape->norm[i] = { 0,-1,0 };
 				shape->norm[i + triangles_pos.size()] = { 0,1,0 };
 			}
-		}*/
-		merge_same_points(shape);
-		set_shape_normals(shape);
+		}
+		/*merge_same_points(shape);
+		set_shape_normals(shape);*/
 		return shape;
 	}
 
