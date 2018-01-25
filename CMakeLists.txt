@@ -6,14 +6,12 @@ option(YOCTO_OPENGL "Build OpenGL apps" ON)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED on)
-# set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
 
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-
 
 if(APPLE)
     add_definitions(-Wno-missing-braces)
@@ -83,8 +81,13 @@ add_library(poly2tri
     src/poly2tri/poly2tri/sweep/sweep_context.cc
 )
 
+add_library(clipper
+	src/clipper/clipper.hpp
+	src/clipper/clipper.cpp
+)
+
 add_executable(test_main src/test_main.cpp)
-target_link_libraries(test_main yocto_gl poly2tri)
+target_link_libraries(test_main yocto_gl poly2tri clipper)
 
 add_executable(ytestgen src/apps/ytestgen.cpp src/yocto/yocto_gl.h)
 add_executable(ytrace src/apps/ytrace.cpp src/yocto/yocto_gl.h)
