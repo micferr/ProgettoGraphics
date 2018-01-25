@@ -5,6 +5,7 @@
 
 #include "yocto\yocto_gl.h"
 #include "poly2tri\poly2tri\poly2tri.h"
+#include "clipper\clipper.hpp"
 #include "yocto_utils.h"
 
 namespace rekt {
@@ -237,6 +238,48 @@ namespace rekt {
 		// ...then back along the left side
 		for (int i = pos.size() - 1; i >= 0; i -= 2) res.push_back(pos[i]);
 		return res;
+	}
+
+	/**
+	 * Offsets a polygon's vertexes to uniformly expand/shrink it.
+	 */
+	std::vector<std::vector<ygl::vec2f>> offset_polygon(
+		const std::vector<ygl::vec2f>& polygon,
+		float delta,
+		unsigned _scale_factor = 10000
+	) {
+		// Clipper only uses integer, thus we scale twice (first expand,
+		// then shrink) to preserve the decimal part.
+		int d = delta*_scale_factor;
+		ClipperLib::Path poly;
+		for (const auto& p : polygon) 
+			poly << ClipperLib::IntPoint(int(p.x*_scale_factor), int(p.y*_scale_factor));
+		ClipperLib::Paths result;
+		ClipperLib::ClipperOffset co;
+		co.AddPath(poly, ClipperLib::jtRound, ClipperLib::etClosedPolygon);
+		co.Execute(result, d);
+		std::vector<std::vector<ygl::vec2f>> newpolys;
+		for (const auto& path : result) {
+			std::vector<ygl::vec2f> poly;
+			for (const auto& p : path) {
+				poly.push_back(ygl::vec2f(float(p.X), float(p.Y)) / float(_scale_factor));
+			}
+			newpolys.push_back(poly);
+		}
+		return newpolys;
+	}
+
+	/**
+	 * Simplified version of offset_polygon, it can only expand (no shrinking),
+	 * so we're sure to only have one output polygon
+	 */
+	std::vector<ygl::vec2f> expand_polygon(
+		const std::vector<ygl::vec2f>& polygon,
+		float delta,
+		unsigned _scale_factor = 10000
+	) {
+		if (delta < 0.f) throw std::runtime_error("Invalid arguments");
+		return offset_polygon(polygon, delta, _scale_factor)[0];
 	}
 
 	/**
