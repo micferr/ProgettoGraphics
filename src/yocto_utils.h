@@ -59,6 +59,10 @@ namespace rekt {
 		return atan2f(v.y, v.x);
 	}
 
+	void translate(ygl::instance* inst, const ygl::vec3f& d) {
+		inst->frame.o = inst->frame.o + d;
+	}
+
 	void print_shape(const ygl::shape* shp) {
 		printf("Vertexes: (pos and norm)\n");
 		for (int i = 0; i < shp->pos.size(); i++) {
