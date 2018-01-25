@@ -76,16 +76,15 @@ namespace rekt {
 	std::vector<ygl::vec2f> make_regular_polygon(
 		int num_sides, 
 		float radius = 1.f,
-		bool xy_aligned = false
+		float base_angle = 0.f
 	) {
 		if (num_sides <= 2) {
 			throw std::exception("A polygon must have at least 3 sides.");
 		}
 		std::vector<ygl::vec2f> res;
 		float angle_step = 2 * pi / num_sides;
-		float angle0 = xy_aligned ? angle_step/2.f : 0.f;
 		for (int i = 0; i < num_sides; i++) {
-			float angle = i*angle_step + angle0;
+			float angle = i*angle_step + base_angle;
 			res.push_back({ cos(angle)*radius, sin(angle)*radius });
 		}
 		return res;
@@ -99,9 +98,9 @@ namespace rekt {
 	std::vector<ygl::vec3f> make_regular_polygonXZ(
 		int num_sides,
 		float radius = 1.f,
-		bool xz_aligned = false
+		float base_angle = 0.f
 	) {
-		return to_3d(make_regular_polygon(num_sides, radius, xz_aligned));
+		return to_3d(make_regular_polygon(num_sides, radius, base_angle));
 	}
 
 	std::vector<ygl::vec2f> make_quad(float side_length = 1.f) {
@@ -256,7 +255,7 @@ namespace rekt {
 			poly << ClipperLib::IntPoint(int(p.x*_scale_factor), int(p.y*_scale_factor));
 		ClipperLib::Paths result;
 		ClipperLib::ClipperOffset co;
-		co.AddPath(poly, ClipperLib::jtRound, ClipperLib::etClosedPolygon);
+		co.AddPath(poly, ClipperLib::jtSquare, ClipperLib::etClosedPolygon);
 		co.Execute(result, d);
 		std::vector<std::vector<ygl::vec2f>> newpolys;
 		for (const auto& path : result) {
