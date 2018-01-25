@@ -255,7 +255,7 @@ namespace rekt {
 			poly << ClipperLib::IntPoint(int(p.x*_scale_factor), int(p.y*_scale_factor));
 		ClipperLib::Paths result;
 		ClipperLib::ClipperOffset co;
-		co.AddPath(poly, ClipperLib::jtSquare, ClipperLib::etClosedPolygon);
+		co.AddPath(poly, ClipperLib::jtMiter, ClipperLib::etClosedPolygon);
 		co.Execute(result, d);
 		std::vector<std::vector<ygl::vec2f>> newpolys;
 		for (const auto& path : result) {
