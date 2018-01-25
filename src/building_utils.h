@@ -295,37 +295,38 @@ namespace rekt {
 		return border;
 	}
 
-	ygl::shape* make_floors(
-		const std::vector<ygl::vec2f>& floor_main_points,
-		float floor_width,
+	ygl::shape* __make_floors_from_border(
+		const std::vector<ygl::vec2f>& floor_border,
 		unsigned num_floors,
 		float floor_height,
-		float beltcourse_height,
-		float beltcourse_additional_width,
+		float belt_height,
+		float belt_additional_width,
 		const ygl::vec4f& floor_color = { 1,1,1,1 },
 		const ygl::vec4f& belt_color = { 1,1,1,1 }
 	) {
-		if (floor_width <= 0.f || num_floors <= 0 ||
-			floor_height <= 0.f || beltcourse_height < 0.f) {
+		if (num_floors <= 0 || floor_height <= 0.f || 
+			belt_height < 0.f || belt_additional_width <= 0.f) {
 			throw std::runtime_error("Invalid arguments");
 		}
-		auto floor = thicken_polygon(
-			make_wide_line_border(floor_main_points, floor_width),
-			floor_height
-		);
-		floor->color = std::vector<ygl::vec4f>(floor->pos.size(), floor_color);
-		auto belt = thicken_polygon(
-			make_wide_line_border(floor_main_points, floor_width + beltcourse_additional_width),
-			beltcourse_height
-		);
-		belt->color = std::vector<ygl::vec4f>(belt->pos.size(), belt_color);
-		displace(belt->pos, { 0,floor_height,0 });
+		auto floor = thicken_polygon(floor_border, floor_height);
+		set_shape_color(floor, floor_color);
+		ygl::shape* belt = nullptr;
+		if (belt_height <= 0.f) { // Belt is optional
+			belt = new ygl::shape();
+		}
+		else {
+			std::vector<ygl::vec2f> belt_border =
+				expand_polygon(floor_border, belt_additional_width);
+			belt = thicken_polygon(belt_border, belt_height);
+			set_shape_color(belt, belt_color);
+			displace(belt->pos, { 0,floor_height,0 });
+		}
 		auto shp = new ygl::shape();
 		merge_shapes(shp, floor);
 		for (int i = 1; i < num_floors; i++) {
 			merge_shapes(shp, belt);
-			displace(belt->pos, { 0,floor_height + beltcourse_height,0 });
-			displace(floor->pos, { 0,floor_height + beltcourse_height,0 });
+			displace(belt->pos, { 0,floor_height + belt_height,0 });
+			displace(floor->pos, { 0,floor_height + belt_height,0 });
 			merge_shapes(shp, floor);
 		}
 
@@ -333,6 +334,55 @@ namespace rekt {
 		delete belt;
 		return shp;
 	}
+
+	ygl::shape* make_floors_from_main_points(
+		const std::vector<ygl::vec2f>& floor_main_points,
+		float floor_width,
+		unsigned num_floors,
+		float floor_height,
+		float belt_height,
+		float belt_additional_width,
+		const ygl::vec4f& floor_color = { 1,1,1,1 },
+		const ygl::vec4f& belt_color = { 1,1,1,1 }
+	) {
+		if (floor_width <= 0.f || num_floors <= 0 || floor_height <= 0.f || 
+			belt_height < 0.f || belt_additional_width < 0.f) {
+			throw std::runtime_error("Invalid arguments");
+		}
+		auto floor_border = to_2d(make_wide_line_border(floor_main_points, floor_width));
+		return __make_floors_from_border(
+			floor_border, num_floors, floor_height,
+			belt_height, belt_additional_width,
+			floor_color, belt_color
+		);
+	}
+
+	ygl::shape* make_floors_from_regular(
+		const ygl::vec2f& floor_center,
+		const ygl::vec2f& floor_vertex,
+		unsigned num_sides,
+		unsigned num_floors,
+		float floor_height,
+		float belt_height,
+		float belt_additional_width,
+		const ygl::vec4f& floor_color = { 1,1,1,1 },
+		const ygl::vec4f& belt_color = { 1,1,1,1 }
+	) {
+		auto border = make_regular_polygon(
+			num_sides,
+			ygl::length(floor_vertex - floor_center),
+			get_angle(floor_vertex - floor_center)
+		);
+		displace(border, floor_center);
+		return __make_floors_from_border(
+			border,
+			num_floors, floor_height,
+			belt_height, belt_additional_width,
+			floor_color, belt_color
+		);
+	}
+
+	auto& make_floors_from_border = __make_floors_from_border;
 }
 
 #endif // BUILDING_UTILS_H
