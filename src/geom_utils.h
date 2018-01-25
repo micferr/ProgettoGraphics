@@ -523,6 +523,17 @@ namespace rekt {
 		return shape;
 	}
 
+	ygl::shape* thicken_polygon(
+		const std::vector<ygl::vec2f>& border,
+		float thickness,
+		const std::vector<std::vector<ygl::vec2f>>& holes = {},
+		bool smooth_normals = true
+	) {
+		std::vector<std::vector<ygl::vec3f>> _holes;
+		for (const auto& h : holes) _holes.push_back(to_3d(h));
+		return thicken_polygon(to_3d(border), thickness, _holes, smooth_normals);
+	}
+
 /**
  * If origin_center is true, the model is centered on (0,0,0),
  * else its center is (width,height,depth)/2
