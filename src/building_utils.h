@@ -262,6 +262,10 @@ namespace rekt {
 		return shp;
 	}
 
+	float get_building_height(unsigned num_floors, float floor_height, float belt_height) {
+		return num_floors*floor_height + (num_floors - 1)*belt_height;
+	}
+
 	std::vector<ygl::vec2f> __make_floor_border_from_main_points(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width
