@@ -432,6 +432,35 @@ namespace rekt {
 	}
 
 	/**
+	 * Executes func on all sides of the polygon (where a side is
+	 * two consecutive vertexes)
+	 */
+	void for_sides(
+		const std::vector<ygl::vec2f>& poly,
+		const std::function<void(const ygl::vec2f&, const ygl::vec2f&)>& func
+	) {
+		for (int i = 0; i < poly.size()-1; i++) {
+			func(poly[i], poly[i + 1]);
+		}
+		func(poly.back(), poly.front());
+	}
+
+	ygl::vec3f get_size(const ygl::shape* shp) {
+		if (shp->pos.size() == 0) return ygl::zero3f;
+		auto pmin = shp->pos[0];
+		auto pmax = pmin;
+		for (const auto& p : shp->pos) {
+			if (p.x < pmin.x) pmin.x = p.x;
+			if (p.x > pmax.x) pmax.x = p.x;
+			if (p.y < pmin.y) pmin.y = p.y;
+			if (p.y > pmax.y) pmax.y = p.y;
+			if (p.z < pmin.z) pmin.z = p.z;
+			if (p.z > pmax.z) pmax.z = p.z;
+		}
+		return pmax - pmin;
+	}
+
+	/**
 	* Merges duplicates points in a shape
 	*
 	* TODO: Remove duplicates from shp->pos
