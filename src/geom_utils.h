@@ -420,6 +420,18 @@ namespace rekt {
 	}
 
 	/**
+	 * Rotate all input points by 'angle' radiants around the y axis
+	 * counter-clockwise
+	 */
+	void rotate_y(std::vector<ygl::vec3f>& points, float angle) {
+		auto p2d = to_2d(points);
+		rotate(p2d, angle);
+		for (int i = 0; i < points.size(); i++) {
+			points[i] = to_3d(p2d[i], points[i].y);
+		}
+	}
+
+	/**
 	* Merges duplicates points in a shape
 	*
 	* TODO: Remove duplicates from shp->pos
