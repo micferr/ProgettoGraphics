@@ -387,6 +387,40 @@ namespace rekt {
 	}
 
 	auto& make_floors_from_border = __make_floors_from_border;
+
+	// Walls
+
+	/**
+	 * Makes a wall.
+	 *
+	 * If closed is true, the last input point is connected to the first.
+	 */
+	ygl::shape* make_wall(
+		const std::vector<ygl::vec2f> points,
+		float thickness,
+		float height,
+		bool closed = false,
+		const ygl::vec4f& color = {1,1,1,1}
+	) {
+		ygl::shape* shp;
+		if (!closed) {
+			shp = thicken_polygon(
+				make_wide_line_border(points, thickness),
+				height
+			);
+		}
+		else {
+			auto ext_border = expand_polygon(points, thickness / 2.f);
+			// Assuming only one output polygon
+			auto int_border = offset_polygon(points, -thickness / 2.f)[0];
+			std::reverse(int_border.begin(), int_border.end());
+			shp = thicken_polygon(
+				ext_border, height, { int_border }
+			);
+		}
+		set_shape_color(shp, color);
+		return shp;
+	}
 }
 
 #endif // BUILDING_UTILS_H
