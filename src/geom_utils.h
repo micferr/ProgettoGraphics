@@ -406,29 +406,30 @@ namespace rekt {
 	}
 
 	/**
-	* Rotates all points by 'angle' radiants, counter-clockwise relative to (0,0)
-	*
-	* The function is quite inefficient, to rotate an in-world instance try changing
-	* its frame rather than using this.
+	* Rotates the point by 'angle' radiants, counter-clockwise relative to (0,0)
 	*/
+	void rotate(ygl::vec2f& point, float angle) {
+		auto new_angle = atan2f(point.y, point.x) + angle;
+		auto length = ygl::length(point);
+		point = { cos(new_angle), sin(new_angle) }*length;
+	}
+
 	void rotate(std::vector<ygl::vec2f>& points, float angle) {
-		for (auto& p : points) {
-			float new_angle = atan2f(p.y, p.x) + angle;
-			float length = ygl::length(p);
-			p = { length*cos(new_angle), length*sin(new_angle) };
-		}
+		for (auto& p : points) rotate(p, angle);
 	}
 
 	/**
-	 * Rotate all input points by 'angle' radiants around the y axis
+	 * Rotates the point by 'angle' radiants around the y axis
 	 * counter-clockwise
 	 */
-	void rotate_y(std::vector<ygl::vec3f>& points, float angle) {
-		auto p2d = to_2d(points);
+	void rotate_y(ygl::vec3f& point, float angle) {
+		auto p2d = to_2d(point);
 		rotate(p2d, angle);
-		for (int i = 0; i < points.size(); i++) {
-			points[i] = to_3d(p2d[i], points[i].y);
-		}
+		point = to_3d(p2d, point.y);
+	}
+
+	void rotate_y(std::vector<ygl::vec3f>& points, float angle) {
+		for (auto& p : points) rotate_y(p, angle);
 	}
 
 	/**
