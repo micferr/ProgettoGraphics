@@ -13,7 +13,7 @@ namespace rekt {
 	 */
 	bool bernoulli(float p, ygl::rng_pcg32& rng) {
 		if (p < 0 || p > 1) throw std::exception("Invalid probability value.");
-		return ygl::next_rand1f(rng) > p;
+		return ygl::next_rand1f(rng) <= p;
 	}
 
 	/**
