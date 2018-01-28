@@ -421,6 +421,101 @@ namespace rekt {
 		set_shape_color(shp, color);
 		return shp;
 	}
+
+	// Windows
+
+	// Groups the parameters relative to windows's generation
+	struct windows_info {
+		std::vector<ygl::vec2f>* floor_border = nullptr;
+		float floor_height = 1.f;
+		float belt_height = 0.1f;
+		unsigned num_floors = 2;
+		float windows_distance = 0.f; // Avg distance between windows
+		float windows_distance_from_edges = 0.f;
+		ygl::shape* closed_window_shp = nullptr;
+		ygl::shape* open_window_shp = nullptr;
+		std::string name = "";
+		ygl::rng_pcg32* rng = nullptr; 	
+		float open_windows_ratio = 0.5f; // Percentage of open windows
+		float filled_spots_ratio = 1.f; // Ratio of spots that actually have a window
+		int door_side = -1;
+	};
+
+	void check_win_info(const windows_info& win_info) {
+		const auto& w = win_info;
+		if (w.door_side < -1 || w.door_side > int(w.floor_border->size()) ||
+			w.floor_height <= 0.f || w.belt_height < 0.f || w.num_floors < 1 ||
+			w.windows_distance < 0.f ||
+			w.closed_window_shp == nullptr || w.open_window_shp == nullptr ||
+			w.open_windows_ratio < 0.f || w.open_windows_ratio > 1.f ||
+			w.filled_spots_ratio < 0.f || w.filled_spots_ratio > 1.f
+			) {
+			throw std::runtime_error("Invalid windows parameters");
+		}
+	}
+
+	/**
+	 * Makes all the windows for a building.
+	 *
+	 * Since it needs a different material than the rest of the building,
+	 * the shape (material included) is taken as input and a vector of instances
+	 * (one for each window) is returned. The shapes are assumed to be centered around
+	 * {0,0,0} (on all three dimensions!).
+	 */
+	std::vector<ygl::instance*> make_windows(
+		const windows_info& win_info
+	) {
+		check_win_info(win_info);
+
+		int win_id = 0; // Windows's unique id for instances' names
+		std::vector<ygl::instance*> windows;
+		for_sides(
+			*win_info.floor_border,  
+			[&win_info, &win_id, &windows](const ygl::vec2f& p1, const ygl::vec2f& p2) 
+		{
+			auto side = p2 - p1;
+			auto eps = win_info.windows_distance_from_edges; // Min distance between window and corner
+			auto W = ygl::length(side); // Side length
+			auto w = get_size(win_info.closed_window_shp).x; // Window's width
+			if (get_size(win_info.open_window_shp).x > w) w = get_size(win_info.open_window_shp).x;
+			auto s = win_info.windows_distance;
+			int n; // Number of windows fitting on this side within the given constraints
+			if (w + 2*eps >= W) n = 0;
+			else n = int((W - w - 2 * eps) / (w + s)) + 1;
+			if (n <= 0) return;
+
+			// Having found the number of windows, distribute them more uniformly
+			s = (W - 2 * eps - n*w) / (n - 1);
+			if (n == 1) eps = W / 2.f; // Special case: 1 window is on the center
+			
+			auto dir = ygl::normalize(side); // Side versor
+			for (int i = 0; i < n; i++) { // n windows per size
+				auto win_center_xz = p1 + dir*(eps + w / 2.f + (w + s)*i);
+				for (int j = 0; j < win_info.num_floors; j++) { // replicate vertically
+					// Keep around f_p_s percent of windows
+					if (!bernoulli(win_info.filled_spots_ratio, *win_info.rng))
+						continue;
+
+					auto win_center_y = 
+						win_info.floor_height / 2.f + 
+						(win_info.floor_height + win_info.belt_height)*j;
+					
+					auto win_inst = new ygl::instance();
+					win_inst->name = win_info.name + "_" + std::to_string(win_id++);
+					win_inst->shp =
+						bernoulli(win_info.open_windows_ratio, *win_info.rng) ? 
+						win_info.open_window_shp : 
+						win_info.closed_window_shp;
+					win_inst->frame.o = 
+						{ win_center_xz.x, win_center_y, win_center_xz.y };
+					rotate_y(win_inst->frame.x, -get_angle(side));
+					rotate_y(win_inst->frame.z, -get_angle(side));
+					windows.push_back(win_inst);
+				}
+			}
+		});
+		return windows;
+	}
 }
 
 #endif // BUILDING_UTILS_H
