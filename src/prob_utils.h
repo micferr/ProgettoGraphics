@@ -75,6 +75,13 @@ namespace rekt {
 	}
 
 	/**
+	 * Returns a random value in [min,max) with uniform distribution
+	 */
+	float uniform(ygl::rng_pcg32& rng, float min, float max) {
+		return ygl::next_rand1f(rng)*(max - min) + min;
+	}
+
+	/**
 	 * Generates a random value with normal distribution
 	 */
 	float gaussian(ygl::rng_pcg32& rng, float mu, float sigma) {
