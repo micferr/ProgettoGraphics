@@ -425,7 +425,7 @@ namespace rekt {
 	// Windows
 
 	// Groups the parameters relative to windows's generation
-	struct windows_info {
+	struct windows_params {
 		std::vector<ygl::vec2f>* floor_border = nullptr;
 		float floor_height = 1.f;
 		float belt_height = 0.1f;
@@ -441,12 +441,13 @@ namespace rekt {
 		int door_side = -1;
 	};
 
-	void check_win_info(const windows_info& win_info) {
+	void check_win_info(const windows_params& win_info) {
 		const auto& w = win_info;
 		if (w.door_side < -1 || w.door_side > int(w.floor_border->size()) ||
 			w.floor_height <= 0.f || w.belt_height < 0.f || w.num_floors < 1 ||
 			w.windows_distance < 0.f ||
 			w.closed_window_shp == nullptr || w.open_window_shp == nullptr ||
+			w.rng == nullptr ||
 			w.open_windows_ratio < 0.f || w.open_windows_ratio > 1.f ||
 			w.filled_spots_ratio < 0.f || w.filled_spots_ratio > 1.f
 			) {
@@ -463,7 +464,7 @@ namespace rekt {
 	 * {0,0,0} (on all three dimensions!).
 	 */
 	std::vector<ygl::instance*> make_windows(
-		const windows_info& win_info
+		const windows_params& win_info
 	) {
 		check_win_info(win_info);
 
@@ -506,15 +507,37 @@ namespace rekt {
 						bernoulli(win_info.open_windows_ratio, *win_info.rng) ? 
 						win_info.open_window_shp : 
 						win_info.closed_window_shp;
-					win_inst->frame.o = 
-						{ win_center_xz.x, win_center_y, win_center_xz.y };
-					rotate_y(win_inst->frame.x, -get_angle(side));
-					rotate_y(win_inst->frame.z, -get_angle(side));
+					win_inst->frame.o = to_3d(win_center_xz, win_center_y);
+					rotate_y(win_inst->frame.x, get_angle(side));
+					rotate_y(win_inst->frame.z, get_angle(side));
 					windows.push_back(win_inst);
 				}
 			}
 		});
 		return windows;
+	}
+
+	std::tuple<ygl::shape*, ygl::shape*> make_test_windows(
+		const std::string& name_open, const std::string& name_closed
+	) {
+		auto regwnd_shp = new ygl::shape();
+		std::tie(regwnd_shp->quads, regwnd_shp->pos) = make_parallelepidedon(22.f, 20.f, 4.f);
+		set_shape_normals(regwnd_shp);
+		set_shape_color(regwnd_shp, { 0.8f,0.8f,1.f,1.f });
+		center_points(regwnd_shp->pos);
+		regwnd_shp->mat = make_material(name_open + "_mat", { 1,1,1 }, nullptr, { 0.8f,0.8f,0.8f });
+		regwnd_shp->name = name_open + "_shape";
+
+		auto regwnd_close_shp = new ygl::shape();
+		std::tie(regwnd_close_shp->quads, regwnd_close_shp->pos) =
+			make_parallelepidedon(12.f, 20.f, 4.f);
+		center_points(regwnd_close_shp->pos);
+		set_shape_normals(regwnd_close_shp);
+		set_shape_color(regwnd_close_shp, { 0.5f,0.5f,0.f,1.f });
+		regwnd_close_shp->mat = make_material(name_closed + "_mat", { 1,1,1 }, nullptr);
+		regwnd_close_shp->name = name_closed + "_shape";
+
+		return { regwnd_shp, regwnd_close_shp };
 	}
 }
 
