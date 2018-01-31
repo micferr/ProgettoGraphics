@@ -23,6 +23,86 @@
 
 namespace rekt {
 
+	// Parameter enums and structs
+
+	enum class roof_type {
+		none = 0,
+		crossgabled,
+		crosshipped,
+		pyramid
+	};
+
+	// Roof parameters, all types of roof combined for simplicity.
+	// Only relevant params have to be set, the others can be ignored
+	struct roof_params {
+		roof_type type = roof_type::none;
+		ygl::vec4f color = { 1,1,1,1 };
+		float roof_angle = rekt::pi / 2.f;
+
+		// CrossGabled
+		float thickness = -1.f; // Ignored if negative
+		ygl::vec4f color2 = { 1,1,1,1 };
+		float rake_overhang = 0.f;
+		float roof_overhang = 0.f;
+
+		// CrossHipped
+		float hip_depth = 0.f;
+
+		// Pyramid
+		float roof_height; // We can't use angle since it's different for each edge
+	};
+
+	// Groups the parameters relative to windows's generation
+	struct windows_params {
+		std::string name = "";
+		float windows_distance = 0.f; // Avg distance between windows
+		float windows_distance_from_edges = 0.f;
+		ygl::shape* closed_window_shape = nullptr;
+		ygl::shape* open_window_shape = nullptr;
+		float open_windows_ratio = 0.5f; // Percentage of open windows
+		float filled_spots_ratio = 1.f; // Ratio of spots that actually have a window
+	};
+
+	enum class building_type {
+		main_points = 0,
+		border,
+		regular
+	};
+
+	struct building_params {
+		building_type type;
+
+		// Type == Main points
+		std::vector<ygl::vec2f> floor_main_points = {};
+		float floor_width = 1.f;
+		// Type == Border
+		std::vector<ygl::vec2f> floor_border = {};
+		// Type == Regular
+		unsigned num_sides = 3;
+		float radius = 1.f;
+		float reg_base_angle = 0.f;
+
+		unsigned num_floors = 1;
+		float floor_height = 1.f;
+		float belt_height = 0.1f;
+		float belt_additional_width = 0.1f;
+		std::string id = "";
+		ygl::vec4f color1 = { 1,1,1,1 };
+		ygl::vec4f color2 = { 1,1,1,1 };
+		ygl::rng_pcg32* rng = nullptr;
+
+		// Roof
+		roof_params roof_pars;
+
+		// Windows
+		windows_params win_pars;
+
+		// Wall
+		// -- nothing for now --
+	};
+
+	// Roofs
+
 	ygl::shape* make_roof_crossgabled_simple(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
@@ -262,6 +342,8 @@ namespace rekt {
 		return shp;
 	}
 
+	// Floors
+
 	float get_building_height(unsigned num_floors, float floor_height, float belt_height) {
 		return num_floors*floor_height + (num_floors - 1)*belt_height;
 	}
@@ -424,30 +506,10 @@ namespace rekt {
 
 	// Windows
 
-	// Groups the parameters relative to windows's generation
-	struct windows_params {
-		std::vector<ygl::vec2f>* floor_border = nullptr;
-		float floor_height = 1.f;
-		float belt_height = 0.1f;
-		unsigned num_floors = 2;
-		float windows_distance = 0.f; // Avg distance between windows
-		float windows_distance_from_edges = 0.f;
-		ygl::shape* closed_window_shp = nullptr;
-		ygl::shape* open_window_shp = nullptr;
-		std::string name = "";
-		ygl::rng_pcg32* rng = nullptr; 	
-		float open_windows_ratio = 0.5f; // Percentage of open windows
-		float filled_spots_ratio = 1.f; // Ratio of spots that actually have a window
-		int door_side = -1;
-	};
-
 	void check_win_info(const windows_params& win_info) {
 		const auto& w = win_info;
-		if (w.door_side < -1 || w.door_side > int(w.floor_border->size()) ||
-			w.floor_height <= 0.f || w.belt_height < 0.f || w.num_floors < 1 ||
-			w.windows_distance < 0.f ||
-			w.closed_window_shp == nullptr || w.open_window_shp == nullptr ||
-			w.rng == nullptr ||
+		if (w.windows_distance < 0.f ||
+			w.closed_window_shape == nullptr || w.open_window_shape == nullptr ||
 			w.open_windows_ratio < 0.f || w.open_windows_ratio > 1.f ||
 			w.filled_spots_ratio < 0.f || w.filled_spots_ratio > 1.f
 			) {
@@ -464,22 +526,37 @@ namespace rekt {
 	 * {0,0,0} (on all three dimensions!).
 	 */
 	std::vector<ygl::instance*> make_windows(
-		const windows_params& win_info
+		const building_params& params
 	) {
-		check_win_info(win_info);
+		check_win_info(params.win_pars);
 
 		int win_id = 0; // Windows's unique id for instances' names
 		std::vector<ygl::instance*> windows;
+		std::vector<ygl::vec2f> border;
+		switch (params.type) {
+		case building_type::main_points: 
+			border = to_2d(make_wide_line_border(params.floor_main_points, params.floor_width));
+			break;
+		case building_type::border: border = params.floor_border; break;
+		case building_type::regular: 
+			border = make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle);
+			break;
+		default:
+			throw std::runtime_error("Invalid building type");
+		}
 		for_sides(
-			*win_info.floor_border,  
-			[&win_info, &win_id, &windows](const ygl::vec2f& p1, const ygl::vec2f& p2) 
+			border,  
+			[&params, &win_id, &windows](const ygl::vec2f& p1, const ygl::vec2f& p2) 
 		{
 			auto side = p2 - p1;
-			auto eps = win_info.windows_distance_from_edges; // Min distance between window and corner
+			auto eps = params.win_pars.windows_distance_from_edges; // Min distance between window and corner
 			auto W = ygl::length(side); // Side length
-			auto w = get_size(win_info.closed_window_shp).x; // Window's width
-			if (get_size(win_info.open_window_shp).x > w) w = get_size(win_info.open_window_shp).x;
-			auto s = win_info.windows_distance;
+			
+			auto w = get_size(params.win_pars.closed_window_shape).x; // Window's width
+			if (get_size(params.win_pars.open_window_shape).x > w) 
+				w = get_size(params.win_pars.open_window_shape).x;
+
+			auto s = params.win_pars.windows_distance;
 			int n; // Number of windows fitting on this side within the given constraints
 			if (w + 2*eps >= W) n = 0;
 			else n = int((W - w - 2 * eps) / (w + s)) + 1;
@@ -492,21 +569,21 @@ namespace rekt {
 			auto dir = ygl::normalize(side); // Side versor
 			for (int i = 0; i < n; i++) { // n windows per size
 				auto win_center_xz = p1 + dir*(eps + w / 2.f + (w + s)*i);
-				for (int j = 0; j < win_info.num_floors; j++) { // replicate vertically
+				for (int j = 0; j < params.num_floors; j++) { // replicate vertically
 					// Keep around f_p_s percent of windows
-					if (!bernoulli(win_info.filled_spots_ratio, *win_info.rng))
+					if (!bernoulli(params.win_pars.filled_spots_ratio, *params.rng))
 						continue;
 
 					auto win_center_y = 
-						win_info.floor_height / 2.f + 
-						(win_info.floor_height + win_info.belt_height)*j;
+						params.floor_height / 2.f + 
+						(params.floor_height + params.belt_height)*j;
 					
 					auto win_inst = new ygl::instance();
-					win_inst->name = win_info.name + "_" + std::to_string(win_id++);
+					win_inst->name = params.win_pars.name + "_" + std::to_string(win_id++);
 					win_inst->shp =
-						bernoulli(win_info.open_windows_ratio, *win_info.rng) ? 
-						win_info.open_window_shp : 
-						win_info.closed_window_shp;
+						bernoulli(params.win_pars.open_windows_ratio, *params.rng) ? 
+						params.win_pars.open_window_shape : 
+						params.win_pars.closed_window_shape;
 					win_inst->frame.o = to_3d(win_center_xz, win_center_y);
 					rotate_y(win_inst->frame.x, get_angle(side));
 					rotate_y(win_inst->frame.z, get_angle(side));
@@ -533,11 +610,133 @@ namespace rekt {
 			make_parallelepidedon(12.f, 20.f, 4.f);
 		center_points(regwnd_close_shp->pos);
 		set_shape_normals(regwnd_close_shp);
-		set_shape_color(regwnd_close_shp, { 0.5f,0.5f,0.f,1.f });
-		regwnd_close_shp->mat = make_material(name_closed + "_mat", { 1,1,1 }, nullptr);
+		set_shape_color(regwnd_close_shp, { 0.3f,0.1f,0.f,1.f });
+		regwnd_close_shp->mat = make_material(name_closed + "_mat", { 1,1,1 }, nullptr, { 0,0,0 });
 		regwnd_close_shp->name = name_closed + "_shape";
 
 		return { regwnd_shp, regwnd_close_shp };
+	}
+
+	enum class balcony_type {
+		none = 0,
+		each_window, // each window has its own balcony
+		whole_side, // one balcony for each side of the building (at least one window)
+		all_around // a single balcony which goes all around the floor
+	};
+
+	/*void merge_balconies(
+		const std::vector<ygl::vec3f>& floor_border,
+		
+	) */
+
+	// Whole house
+
+	ygl::shape* make_roof_from_params(const building_params& params) {
+		const auto& r_pars = params.roof_pars; // Shorter alias
+		auto base_height = get_building_height(
+			params.num_floors, params.floor_height, params.belt_height
+		);
+		
+		switch (r_pars.type) {
+		case roof_type::none:
+			return new ygl::shape(); // Empty shape
+		case roof_type::crossgabled: {
+			if (params.type != building_type::main_points) {
+				throw std::runtime_error("Invalid parameters");
+			}
+			auto r_shp = make_roof_crossgabled_simple(
+				params.floor_main_points,
+				params.floor_width,
+				r_pars.roof_angle,
+				base_height,
+				r_pars.color
+			);
+			if (r_pars.thickness > 0.f) {
+				auto thickness_shp = make_roof_crossgabled_thickness(
+					params.floor_main_points, params.floor_width, r_pars.roof_angle,
+					r_pars.thickness, r_pars.rake_overhang, r_pars.roof_overhang,
+					base_height, r_pars.color2
+				);
+				merge_shapes(r_shp, thickness_shp);
+				delete thickness_shp;
+			}
+			return r_shp;
+		}
+		case roof_type::crosshipped:
+			if (params.type != building_type::main_points) {
+				throw std::runtime_error("Invalid parameters");
+			}
+			return make_roof_crosshipped_simple(
+				params.floor_main_points, params.floor_width, r_pars.roof_angle,
+				r_pars.hip_depth, base_height, r_pars.color
+			);
+		case roof_type::pyramid:
+			switch (params.type) {
+			case building_type::main_points:
+				return make_roof_pyramid_from_main_points(
+					params.floor_main_points, params.floor_width, r_pars.roof_height,
+					base_height, r_pars.color
+				);
+			case building_type::border:
+				return make_roof_pyramid_from_border(
+					params.floor_border, r_pars.roof_height, base_height, r_pars.color
+				);
+			case building_type::regular:
+				return make_roof_pyramid_from_border(
+					make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
+					r_pars.roof_height,
+					base_height,
+					r_pars.color
+				);
+			default:
+				throw std::runtime_error("Invalid building type");
+			}
+		default:
+			throw std::runtime_error("Invalid roof type");
+		}
+	}
+
+	std::vector<ygl::instance*> make_building(const building_params& params) {
+		std::vector<ygl::instance*> instances;
+		
+		auto h_inst = new ygl::instance();
+		h_inst->name = params.id + "_inst";
+		switch (params.type) {
+		case building_type::main_points:
+			h_inst->shp = make_floors_from_main_points(
+				params.floor_main_points, params.floor_width, params.num_floors,
+				params.floor_height, params.belt_height, params.belt_additional_width,
+				params.color1, params.color2
+			);
+			break;
+		case building_type::border:
+			h_inst->shp = make_floors_from_border(
+				params.floor_border, params.num_floors, params.floor_height,
+				params.belt_height, params.belt_additional_width,
+				params.color1, params.color2
+			);
+			break;
+		case building_type::regular:
+			h_inst->shp = make_floors_from_border(
+				make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
+				params.num_floors, params.floor_height, params.belt_height,
+				params.belt_additional_width, params.color1, params.color2
+			);
+			break;
+		default:
+			throw std::runtime_error("Invalid building type");
+		}
+		h_inst->shp->name = params.id + "_shp";
+		auto roof_shp = make_roof_from_params(params);
+		merge_shapes(h_inst->shp, roof_shp);
+		delete roof_shp;
+		h_inst->shp->mat = make_material(params.id + "_mat", { 1,1,1 }, nullptr, { 0,0,0 });
+		instances += h_inst;
+		
+		auto w_insts = make_windows(params);
+		instances.insert(instances.end(), w_insts.begin(), w_insts.end());
+
+		return instances;
 	}
 }
 
