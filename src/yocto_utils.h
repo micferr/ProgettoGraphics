@@ -73,6 +73,33 @@ namespace rekt {
 		for (const auto& t : shp->triangles) ygl::println("{}", t);
 		for (const auto& q : shp->quads) ygl::println("{}", q);
 	}
+	
+	/**
+	 * Adds an instance to a scene and, if needed, also add the instance's
+	 * shape and material
+	 *
+	 * The comparison with elements already in the scene is done by checking
+	 * for pointer equality rather than names for performance
+	 */
+	void add_to_scene(ygl::scene* scn, ygl::instance* inst) {
+		scn->instances += inst;
+		
+		// Shape
+		bool found = false;
+		for (auto s : scn->shapes) if (s == inst->shp) {
+			found = true;
+			break;
+		}
+		if (!found) scn->shapes += inst->shp;
+
+		// Material
+		found = false;
+		for (auto m : scn->materials) if (m == inst->shp->mat) {
+			found = true;
+			break;
+		}
+		if (!found) scn->materials += inst->shp->mat;
+	}
 }
 
 #endif // YOCTO_UTILS_H
