@@ -440,6 +440,7 @@ namespace rekt {
 		const std::vector<ygl::vec2f>& poly,
 		const std::function<void(const ygl::vec2f&, const ygl::vec2f&)>& func
 	) {
+		if (poly.size() < 3) return;
 		for (int i = 0; i < poly.size()-1; i++) {
 			func(poly[i], poly[i + 1]);
 		}
@@ -469,7 +470,10 @@ namespace rekt {
 	void merge_same_points(ygl::shape* shp, float eps = 0.0001f) {
 		for (int i = 0; i < shp->pos.size(); i++) {
 			for (int j = i + 1; j < shp->pos.size(); j++) {
-				if (ygl::length(shp->pos[i] - shp->pos[j]) < eps) {
+				if (
+					ygl::length(shp->pos[i] - shp->pos[j]) < eps &&
+					(shp->color.size() == 0 || ygl::length(shp->color[i]-shp->color[j]) < eps)
+				) {
 					for (auto& t : shp->triangles) {
 						for (auto& p : t) if (p == j) p = i;
 					}
