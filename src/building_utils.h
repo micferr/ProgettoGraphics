@@ -598,7 +598,7 @@ namespace rekt {
 		const std::string& name_open, const std::string& name_closed
 	) {
 		auto regwnd_shp = new ygl::shape();
-		std::tie(regwnd_shp->quads, regwnd_shp->pos) = make_parallelepidedon(22.f, 20.f, 4.f);
+		std::tie(regwnd_shp->quads, regwnd_shp->pos) = make_parallelepidedon(1.6f, 1.f, .10f);
 		set_shape_normals(regwnd_shp);
 		set_shape_color(regwnd_shp, { 0.8f,0.8f,1.f,1.f });
 		center_points(regwnd_shp->pos);
@@ -607,7 +607,7 @@ namespace rekt {
 
 		auto regwnd_close_shp = new ygl::shape();
 		std::tie(regwnd_close_shp->quads, regwnd_close_shp->pos) =
-			make_parallelepidedon(12.f, 20.f, 4.f);
+			make_parallelepidedon(1.f, 1.f, .10f);
 		center_points(regwnd_close_shp->pos);
 		set_shape_normals(regwnd_close_shp);
 		set_shape_color(regwnd_close_shp, { 0.3f,0.1f,0.f,1.f });
