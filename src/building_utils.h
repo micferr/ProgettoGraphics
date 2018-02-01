@@ -309,7 +309,7 @@ namespace rekt {
 			// Vertical, rear-facing
 			if (i == j - 3) {
 				shp->quads.push_back({ bi + 6,bi + 8,bi + 11,bi + 9 });
-				shp->quads.push_back({ bi + 7,bi + 8,bi + 11,bi + 10 });
+				shp->quads.push_back({ bi + 7,bi + 10,bi + 11,bi + 8 });
 			}
 		}
 		if (base_height != 0.f) {
