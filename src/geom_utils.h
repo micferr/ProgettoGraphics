@@ -245,7 +245,7 @@ namespace rekt {
 	std::vector<std::vector<ygl::vec2f>> offset_polygon(
 		const std::vector<ygl::vec2f>& polygon,
 		float delta,
-		unsigned _scale_factor = 10000
+		unsigned _scale_factor = 100000
 	) {
 		// Clipper only uses integer, thus we scale twice (first expand,
 		// then shrink) to preserve the decimal part.
