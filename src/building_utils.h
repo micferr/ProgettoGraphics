@@ -86,6 +86,9 @@ namespace rekt {
 		float floor_height = 1.f;
 		float belt_height = 0.1f;
 		float belt_additional_width = 0.1f;
+		float width_delta_per_floor = 0.f; // How much to expand or shrink 
+		                                   // each consecutive floor,
+		                                   // as a polygon offsetting size
 		std::string id = "";
 		ygl::vec4f color1 = { 1,1,1,1 };
 		ygl::vec4f color2 = { 1,1,1,1 };
@@ -387,6 +390,7 @@ namespace rekt {
 		float floor_height,
 		float belt_height,
 		float belt_additional_width,
+		float width_delta_per_floor = 0.f,
 		const ygl::vec4f& floor_color = { 1,1,1,1 },
 		const ygl::vec4f& belt_color = { 1,1,1,1 }
 	) {
@@ -401,9 +405,10 @@ namespace rekt {
 			belt = new ygl::shape();
 		}
 		else {
-			std::vector<ygl::vec2f> belt_border =
-				expand_polygon(floor_border, belt_additional_width);
-			belt = thicken_polygon(belt_border, belt_height);
+			belt = thicken_polygon(
+				expand_polygon(floor_border, belt_additional_width), 
+				belt_height
+			);
 			set_shape_color(belt, belt_color);
 			displace(belt->pos, { 0,floor_height,0 });
 		}
@@ -411,8 +416,31 @@ namespace rekt {
 		merge_shapes(shp, floor);
 		for (int i = 1; i < num_floors; i++) {
 			merge_shapes(shp, belt);
-			displace(belt->pos, { 0,floor_height + belt_height,0 });
-			displace(floor->pos, { 0,floor_height + belt_height,0 });
+			if (width_delta_per_floor == 0.f) {
+				displace(belt->pos, { 0,floor_height + belt_height,0 });
+				displace(floor->pos, { 0,floor_height + belt_height,0 });
+			}
+			else {
+				delete floor;
+				delete belt;
+				// NB:
+				// Width delta is divided by two since it is applied for each side
+				floor = thicken_polygon(
+					offset_polygon(floor_border, width_delta_per_floor*i/2)[0],
+					floor_height
+				);
+				belt = thicken_polygon(
+					offset_polygon(
+						floor_border,
+						belt_additional_width + width_delta_per_floor*i/2
+					)[0],
+					belt_height
+				);
+				displace(floor->pos, { 0,(floor_height + belt_height)*i,0 });
+				displace(belt->pos, { 0,(floor_height + belt_height)*i + floor_height,0 });
+				set_shape_color(floor, floor_color);
+				set_shape_color(belt, belt_color);
+			}
 			merge_shapes(shp, floor);
 		}
 
@@ -428,6 +456,7 @@ namespace rekt {
 		float floor_height,
 		float belt_height,
 		float belt_additional_width,
+		float width_delta_per_floor = 0.f,
 		const ygl::vec4f& floor_color = { 1,1,1,1 },
 		const ygl::vec4f& belt_color = { 1,1,1,1 }
 	) {
@@ -438,7 +467,7 @@ namespace rekt {
 		auto floor_border = to_2d(make_wide_line_border(floor_main_points, floor_width));
 		return __make_floors_from_border(
 			floor_border, num_floors, floor_height,
-			belt_height, belt_additional_width,
+			belt_height, belt_additional_width, width_delta_per_floor,
 			floor_color, belt_color
 		);
 	}
@@ -451,6 +480,7 @@ namespace rekt {
 		float floor_height,
 		float belt_height,
 		float belt_additional_width,
+		float width_delta_per_floor = 0.f,
 		const ygl::vec4f& floor_color = { 1,1,1,1 },
 		const ygl::vec4f& belt_color = { 1,1,1,1 }
 	) {
@@ -463,7 +493,7 @@ namespace rekt {
 		return __make_floors_from_border(
 			border,
 			num_floors, floor_height,
-			belt_height, belt_additional_width,
+			belt_height, belt_additional_width, width_delta_per_floor,
 			floor_color, belt_color
 		);
 	}
@@ -532,65 +562,72 @@ namespace rekt {
 
 		int win_id = 0; // Windows's unique id for instances' names
 		std::vector<ygl::instance*> windows;
-		std::vector<ygl::vec2f> border;
-		switch (params.type) {
-		case building_type::main_points: 
-			border = to_2d(make_wide_line_border(params.floor_main_points, params.floor_width));
-			break;
-		case building_type::border: border = params.floor_border; break;
-		case building_type::regular: 
-			border = make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle);
-			break;
-		default:
-			throw std::runtime_error("Invalid building type");
-		}
-		for_sides(
-			border,  
-			[&params, &win_id, &windows](const ygl::vec2f& p1, const ygl::vec2f& p2) 
-		{
-			auto side = p2 - p1;
-			auto eps = params.win_pars.windows_distance_from_edges; // Min distance between window and corner
-			auto W = ygl::length(side); // Side length
-			
-			auto w = get_size(params.win_pars.closed_window_shape).x; // Window's width
-			if (get_size(params.win_pars.open_window_shape).x > w) 
-				w = get_size(params.win_pars.open_window_shape).x;
+		for (int i = 0; i < params.num_floors; i++) {
+			std::vector<ygl::vec2f> border;
+			switch (params.type) {
+			case building_type::main_points:
+				border = to_2d(make_wide_line_border(
+					params.floor_main_points, 
+					params.floor_width + params.width_delta_per_floor*i
+					)
+				);
+				break;
+			case building_type::border: 
+				border = offset_polygon(params.floor_border, params.width_delta_per_floor*i)[0]; 
+				break;
+			case building_type::regular:
+				border = make_regular_polygon(
+					params.num_sides, 
+					params.radius + params.width_delta_per_floor*i, 
+					params.reg_base_angle
+				);
+				break;
+			default:
+				throw std::runtime_error("Invalid building type");
+			}
+			for_sides(border, [&](const ygl::vec2f& p1, const ygl::vec2f& p2) {
+				auto side = p2 - p1;
+				auto eps = params.win_pars.windows_distance_from_edges; // Min distance between window and corner
+				auto W = ygl::length(side); // Side length
 
-			auto s = params.win_pars.windows_distance;
-			int n; // Number of windows fitting on this side within the given constraints
-			if (w + 2*eps >= W) n = 0;
-			else n = int((W - w - 2 * eps) / (w + s)) + 1;
-			if (n <= 0) return;
+				auto w = get_size(params.win_pars.closed_window_shape).x; // Window's width
+				if (get_size(params.win_pars.open_window_shape).x > w)
+					w = get_size(params.win_pars.open_window_shape).x;
 
-			// Having found the number of windows, distribute them more uniformly
-			s = (W - 2 * eps - n*w) / (n - 1);
-			if (n == 1) eps = W / 2.f; // Special case: 1 window is on the center
-			
-			auto dir = ygl::normalize(side); // Side versor
-			for (int i = 0; i < n; i++) { // n windows per size
-				auto win_center_xz = p1 + dir*(eps + w / 2.f + (w + s)*i);
-				for (int j = 0; j < params.num_floors; j++) { // replicate vertically
+				auto s = params.win_pars.windows_distance;
+				int n; // Number of windows fitting on this side within the given constraints
+				if (w + 2 * eps >= W) n = 0;
+				else n = int((W - w - 2 * eps) / (w + s)) + 1;
+				if (n <= 0) return;
+
+				// Having found the number of windows, distribute them more uniformly
+				s = (W - 2 * eps - n*w) / (n - 1);
+				if (n == 1) eps = W / 2.f; // Special case: 1 window is on the center
+
+				auto dir = ygl::normalize(side); // Side versor
+				for (int j = 0; j < n; j++) { // n windows per size
+					auto win_center_xz = p1 + dir*(eps + w / 2.f + (w + s)*j);
 					// Keep around f_p_s percent of windows
 					if (!bernoulli(params.win_pars.filled_spots_ratio, *params.rng))
 						continue;
 
-					auto win_center_y = 
-						params.floor_height / 2.f + 
-						(params.floor_height + params.belt_height)*j;
-					
+					auto win_center_y =
+						params.floor_height / 2.f +
+						(params.floor_height + params.belt_height)*i;
+
 					auto win_inst = new ygl::instance();
 					win_inst->name = params.win_pars.name + "_" + std::to_string(win_id++);
 					win_inst->shp =
-						bernoulli(params.win_pars.open_windows_ratio, *params.rng) ? 
-						params.win_pars.open_window_shape : 
+						bernoulli(params.win_pars.open_windows_ratio, *params.rng) ?
+						params.win_pars.open_window_shape :
 						params.win_pars.closed_window_shape;
 					win_inst->frame.o = to_3d(win_center_xz, win_center_y);
 					rotate_y(win_inst->frame.x, get_angle(side));
 					rotate_y(win_inst->frame.z, get_angle(side));
 					windows.push_back(win_inst);
 				}
-			}
-		});
+			});
+		}
 		return windows;
 	}
 
@@ -617,18 +654,6 @@ namespace rekt {
 		return { regwnd_shp, regwnd_close_shp };
 	}
 
-	enum class balcony_type {
-		none = 0,
-		each_window, // each window has its own balcony
-		whole_side, // one balcony for each side of the building (at least one window)
-		all_around // a single balcony which goes all around the floor
-	};
-
-	/*void merge_balconies(
-		const std::vector<ygl::vec3f>& floor_border,
-		
-	) */
-
 	// Whole house
 
 	ygl::shape* make_roof_from_params(const building_params& params) {
@@ -636,6 +661,9 @@ namespace rekt {
 		auto base_height = get_building_height(
 			params.num_floors, params.floor_height, params.belt_height
 		);
+		auto floor_width =
+			params.floor_width +
+			params.width_delta_per_floor * (params.num_floors - 1);
 		
 		switch (r_pars.type) {
 		case roof_type::none:
@@ -646,14 +674,14 @@ namespace rekt {
 			}
 			auto r_shp = make_roof_crossgabled_simple(
 				params.floor_main_points,
-				params.floor_width,
+				floor_width,
 				r_pars.roof_angle,
 				base_height,
 				r_pars.color
 			);
 			if (r_pars.thickness > 0.f) {
 				auto thickness_shp = make_roof_crossgabled_thickness(
-					params.floor_main_points, params.floor_width, r_pars.roof_angle,
+					params.floor_main_points, floor_width, r_pars.roof_angle,
 					r_pars.thickness, r_pars.rake_overhang, r_pars.roof_overhang,
 					base_height, r_pars.color2
 				);
@@ -667,14 +695,14 @@ namespace rekt {
 				throw std::runtime_error("Invalid parameters");
 			}
 			return make_roof_crosshipped_simple(
-				params.floor_main_points, params.floor_width, r_pars.roof_angle,
+				params.floor_main_points, floor_width, r_pars.roof_angle,
 				r_pars.hip_depth, base_height, r_pars.color
 			);
 		case roof_type::pyramid:
 			switch (params.type) {
 			case building_type::main_points:
 				return make_roof_pyramid_from_main_points(
-					params.floor_main_points, params.floor_width, r_pars.roof_height,
+					params.floor_main_points, floor_width, r_pars.roof_height,
 					base_height, r_pars.color
 				);
 			case building_type::border:
@@ -683,7 +711,11 @@ namespace rekt {
 				);
 			case building_type::regular:
 				return make_roof_pyramid_from_border(
-					make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
+					make_regular_polygon(
+						params.num_sides, 
+						params.radius + params.width_delta_per_floor*(params.num_floors-1), 
+						params.reg_base_angle
+					),
 					r_pars.roof_height,
 					base_height,
 					r_pars.color
@@ -706,6 +738,7 @@ namespace rekt {
 			h_inst->shp = make_floors_from_main_points(
 				params.floor_main_points, params.floor_width, params.num_floors,
 				params.floor_height, params.belt_height, params.belt_additional_width,
+				params.width_delta_per_floor,
 				params.color1, params.color2
 			);
 			break;
@@ -713,6 +746,7 @@ namespace rekt {
 			h_inst->shp = make_floors_from_border(
 				params.floor_border, params.num_floors, params.floor_height,
 				params.belt_height, params.belt_additional_width,
+				params.width_delta_per_floor,
 				params.color1, params.color2
 			);
 			break;
@@ -720,7 +754,8 @@ namespace rekt {
 			h_inst->shp = make_floors_from_border(
 				make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
 				params.num_floors, params.floor_height, params.belt_height,
-				params.belt_additional_width, params.color1, params.color2
+				params.belt_additional_width, params.width_delta_per_floor,
+				params.color1, params.color2
 			);
 			break;
 		default:
