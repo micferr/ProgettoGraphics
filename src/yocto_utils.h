@@ -100,6 +100,10 @@ namespace rekt {
 		}
 		if (!found) scn->materials += inst->shp->mat;
 	}
+
+	ygl::vec4f rand_color(ygl::rng_pcg32& rng, float a = 1.f) {
+		return { ygl::next_rand1f(rng), ygl::next_rand1f(rng), ygl::next_rand1f(rng), a };
+	}
 }
 
 #endif // YOCTO_UTILS_H
