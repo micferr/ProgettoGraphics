@@ -2,6 +2,7 @@
 #define BUILDING_UTILS_H
 
 #include "geom_utils.h"
+#include "prob_utils.h"
 #include "yocto_utils.h"
 
 /**
@@ -652,6 +653,87 @@ namespace rekt {
 		regwnd_close_shp->name = name_closed + "_shape";
 
 		return { regwnd_shp, regwnd_close_shp };
+	}
+
+	building_params* make_rand_building_params(
+		ygl::rng_pcg32& rng,
+		ygl::shape *open_window_shape,
+		ygl::shape *closed_window_shape,
+		std::string id
+	) {
+		building_params *params = new building_params();
+		params->type = choose_random_weighted(
+			std::vector<building_type>{
+				building_type::main_points,
+				building_type::border,
+				building_type::regular
+			},
+			{80.f, 5.f, 20.f},
+			rng
+		);
+		int num_segments = choose_random(std::vector<int>{ 3,4,5,6,7,8 }, rng);
+		params->floor_main_points = make_segmented_line(
+		{ 0,0 }, num_segments, rekt::pi / 2.f,
+			[&rng]() {
+				float v = 0.f;
+				while (v == 0.f) v = rekt::uniform(rng, -rekt::pi / 3.f, rekt::pi / 3.f);
+				return v;
+			},
+			[&rng]() {return rekt::gaussian(rng, 10.f, 1.f);}
+		);
+		params->floor_width = rekt::uniform(rng, 5.f, 15.f);
+		params->floor_border = { {10,10},{0,5},{-10,10},{-5,0},{-10,-10},{0,-5},{10,-10},{5,0} };
+		params->num_sides = ygl::next_rand1i(rng, 40) + 3;
+		params->radius = uniform(rng, 5.f, 15.f);
+		params->reg_base_angle = uniform(rng, 0.f, pi);
+
+		params->num_floors = ygl::next_rand1i(rng, 6) + 3;
+		params->floor_height = rekt::uniform(rng, 2.5f, 5.f);
+		params->belt_height = rekt::uniform(rng, 0.25f, 0.45f);
+		params->belt_additional_width = rekt::uniform(rng, 0.25f, 0.45f);
+		params->id = id + "_building";
+		params->color1 = rekt::rand_color(rng);
+		params->color2 = rekt::rand_color(rng);
+		params->width_delta_per_floor = uniform(rng, -0.05f, 0.f);
+		params->rng = &rng;
+
+		if (params->type == building_type::main_points) {
+			params->roof_pars.type = rekt::choose_random_weighted(
+				std::vector<roof_type>{ 
+					roof_type::crossgabled,
+					roof_type::crosshipped,
+					roof_type::pyramid,
+					roof_type::none
+				},
+				std::vector<float>{75.f, 10.f, 10.f, 5.f},
+				rng
+			);
+		}
+		else {
+			params->roof_pars.type = rekt::choose_random_weighted(
+				std::vector<roof_type>{roof_type::pyramid, roof_type::none},
+				std::vector<float>{85.f, 15.f},
+				rng
+			);
+		}
+		params->roof_pars.color = rekt::rand_color(rng);
+		params->roof_pars.roof_angle = uniform(rng, pi / 10.f, pi/2.2f);
+		params->roof_pars.thickness = uniform(rng, 0.25f, 0.75f);
+		params->roof_pars.color2 = rekt::rand_color(rng);
+		params->roof_pars.rake_overhang = uniform(rng, 0.1f, 2.f);
+		params->roof_pars.roof_overhang = uniform(rng, 0.1f, 1.f);
+		params->roof_pars.hip_depth = uniform(rng, 0.f, 2.f);
+		params->roof_pars.roof_height = uniform(rng, 3.f, 13.f);
+
+		params->win_pars.name = id + "_wnd";
+		params->win_pars.windows_distance = uniform(rng, .1f, .5f);
+		params->win_pars.windows_distance_from_edges = uniform(rng, .2f, .5f);
+		params->win_pars.closed_window_shape = closed_window_shape;
+		params->win_pars.open_window_shape = open_window_shape;
+		params->win_pars.open_windows_ratio = uniform(rng, 0, 1);
+		params->win_pars.filled_spots_ratio = uniform(rng, 0, 1);
+
+		return params;
 	}
 
 	// Whole house
