@@ -82,6 +82,8 @@ struct app_state {
     }
 };
 
+auto camera_speed = 1.f;
+
 void draw(gl_window* win) {
     auto app = (app_state*)get_user_pointer(win);
 
@@ -113,6 +115,7 @@ void draw(gl_window* win) {
         edited += draw_camera_widget(win, "camera", app->scn, app->scam);
         edited += draw_value_widget(win, "update bvh", app->update_bvh);
         draw_value_widget(win, "fps", app->navigation_fps);
+		draw_value_widget(win, "camera speed", camera_speed, 0, 20, 1);
         draw_tonemap_widgets(win, "", app->exposure, app->gamma, app->filmic);
         edited +=
             draw_scene_widgets(win, "scene", app->scn, app->selection, {});
@@ -225,6 +228,7 @@ void run_ui(app_state* app, int w, int h) {
             if (get_key(win, 'e')) transl.y += 1;
             if (get_key(win, 'q')) transl.y -= 1;
             if (transl != zero3f) {
+				transl *= camera_speed;
                 camera_fps(app->scam->frame, transl, {0, 0});
                 app->scene_updated = true;
             }

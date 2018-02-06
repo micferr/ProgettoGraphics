@@ -309,6 +309,8 @@ inline void shade_scene(const scene* scn, shade_state* st, const camera* cam,
     gl_enable_wireframe(false);
 }
 
+auto camera_speed = 1.f;
+
 // draw with shading
 inline void draw(gl_window* win) {
     auto app = (app_state*)get_user_pointer(win);
@@ -334,6 +336,7 @@ inline void draw(gl_window* win) {
         draw_value_widget(win, "cutout", app->alpha_cutout);
         draw_continue_widget(win);
         draw_value_widget(win, "fps", app->navigation_fps);
+		draw_value_widget(win, "camera speed", camera_speed, 0, 20, 1);
         draw_tonemap_widgets(win, "", app->exposure, app->gamma, app->filmic);
         draw_scene_widgets(
             win, "scene", app->scn, app->selection, app->shstate->txt);
@@ -418,6 +421,7 @@ inline void run_ui(app_state* app, int w, int h, const string& title) {
             if (get_key(win, 'e')) transl.y += 1;
             if (get_key(win, 'q')) transl.y -= 1;
             if (transl != zero3f) {
+				transl *= camera_speed;
                 camera_fps(app->scam->frame, transl, {0, 0});
                 app->scene_updated = true;
             }
