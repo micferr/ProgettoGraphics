@@ -24,7 +24,7 @@
 
 namespace rekt {
 
-	// Parameter enums and structs
+	/// Parameter enums and structs
 
 	enum class roof_type {
 		none = 0,
@@ -32,6 +32,8 @@ namespace rekt {
 		crosshipped,
 		pyramid
 	};
+
+	struct building_params;
 
 	// Roof parameters, all types of roof combined for simplicity.
 	// Only relevant params have to be set, the others can be ignored
@@ -50,7 +52,16 @@ namespace rekt {
 		float hip_depth = 0.f;
 
 		// Pyramid
-		float roof_height; // We can't use angle since it's different for each edge
+		float roof_height = 5.f; // We can't use angle since it's different for each edge
+
+		// None
+		float recursive_prob = 0.f; // Probability to build new buildings on top of the current one
+		                            // (The probablity is among building with roof_pars.type == none)
+		building_params* recursive_params = nullptr; // If nullptr, see make_rand_building_params
+		float keep_prob = 0.5f; // Keep probability for main points 
+		                        // (see random_substrings in prob_utils.h)
+		float continue_prob = 0.8f; // Continue probability for main points
+									// (see random_substrings in prob_utils.h)
 	};
 
 	// Groups the parameters relative to windows's generation
@@ -744,7 +755,7 @@ namespace rekt {
 		{ 0,0 }, num_segments, rekt::pi / 2.f,
 			[&rng]() {
 				float v = 0.f;
-				while (v == 0.f) v = rekt::uniform(rng, -rekt::pi / 3.f, rekt::pi / 3.f);
+				while (v == 0.f) v = rekt::uniform(rng, -rekt::pi / 4.f, rekt::pi / 4.f);
 				return v;
 			},
 			[&rng]() {return rekt::gaussian(rng, 10.f, 1.f);}
