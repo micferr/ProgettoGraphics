@@ -669,7 +669,7 @@ namespace rekt {
 		params->id = id + "_building";
 		params->color1 = rekt::rand_color3f(rng);
 		params->color2 = rekt::rand_color3f(rng);
-		params->width_delta_per_floor = uniform(rng, -0.05f, 0.f);
+		params->width_delta_per_floor = uniform(rng, -0.05f, 2.f);
 		params->rng = &rng;
 
 		if (params->type == building_type::main_points) {
@@ -719,6 +719,33 @@ namespace rekt {
 	}
 
 	// Whole house
+
+	std::tuple<ygl::shape*, ygl::shape*> make_floors_from_params(
+		const building_params& params
+	) {
+		switch (params.type) {
+		case building_type::main_points:
+			return make_floors_from_main_points(
+				params.floor_main_points, params.floor_width, params.num_floors,
+				params.floor_height, params.belt_height, params.belt_additional_width,
+				params.width_delta_per_floor
+			);
+		case building_type::border:
+			return make_floors_from_border(
+				params.floor_border, params.num_floors, params.floor_height,
+				params.belt_height, params.belt_additional_width,
+				params.width_delta_per_floor
+			);
+		case building_type::regular:
+			return make_floors_from_border(
+				make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
+				params.num_floors, params.floor_height, params.belt_height,
+				params.belt_additional_width, params.width_delta_per_floor
+			);
+		default:
+			throw std::runtime_error("Invalid building type");
+		}
+	}
 
 	std::tuple<ygl::shape*, ygl::shape*> make_roof_from_params(const building_params& params) {
 		const auto& r_pars = params.roof_pars; // Shorter alias
@@ -773,7 +800,9 @@ namespace rekt {
 				break;
 			case building_type::border:
 				r_shp = make_roof_pyramid_from_border(
-					params.floor_border, r_pars.roof_height, base_height
+					params.floor_border, 
+					r_pars.roof_height, 
+					base_height
 				);
 				break;
 			case building_type::regular:
@@ -800,32 +829,7 @@ namespace rekt {
 	std::vector<ygl::instance*> make_building(const building_params& params) {
 		std::vector<ygl::instance*> instances;
 		
-		std::tuple<ygl::shape*, ygl::shape*> h_shp;
-		switch (params.type) {
-		case building_type::main_points:
-			h_shp = make_floors_from_main_points(
-				params.floor_main_points, params.floor_width, params.num_floors,
-				params.floor_height, params.belt_height, params.belt_additional_width,
-				params.width_delta_per_floor
-			);
-			break;
-		case building_type::border:
-			h_shp = make_floors_from_border(
-				params.floor_border, params.num_floors, params.floor_height,
-				params.belt_height, params.belt_additional_width,
-				params.width_delta_per_floor
-			);
-			break;
-		case building_type::regular:
-			h_shp = make_floors_from_border(
-				make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
-				params.num_floors, params.floor_height, params.belt_height,
-				params.belt_additional_width, params.width_delta_per_floor
-			);
-			break;
-		default:
-			throw std::runtime_error("Invalid building type");
-		}
+		auto h_shp = make_floors_from_params(params);
 		instances += make_instance(
 			params.id + "_h1",
 			std::get<0>(h_shp),
