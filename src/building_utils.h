@@ -411,16 +411,14 @@ namespace rekt {
 			else {
 				delete floor;
 				delete belt;
-				// NB:
-				// Width delta is divided by two since it is applied for each side
 				floor = thicken_polygon(
-					offset_polygon(floor_border, width_delta_per_floor*i/2)[0],
+					offset_polygon(floor_border, width_delta_per_floor*i)[0],
 					floor_height
 				);
 				belt = thicken_polygon(
 					offset_polygon(
 						floor_border,
-						belt_additional_width + width_delta_per_floor*i/2
+						belt_additional_width + width_delta_per_floor*i
 					)[0],
 					belt_height
 				);
@@ -448,11 +446,60 @@ namespace rekt {
 			belt_height < 0.f || belt_additional_width < 0.f) {
 			throw std::runtime_error("Invalid arguments");
 		}
+
+		// This function is mostly copy-pasted from __make_floors_from_border
+		// Will fix later :)
+
 		auto floor_border = to_2d(make_wide_line_border(floor_main_points, floor_width));
-		return __make_floors_from_border(
-			floor_border, num_floors, floor_height,
-			belt_height, belt_additional_width, width_delta_per_floor
-		);
+		auto floor = thicken_polygon(floor_border, floor_height);
+		ygl::shape* belt = nullptr;
+		if (belt_height <= 0.f) { // Belt is optional
+			belt = new ygl::shape();
+		}
+		else {
+			belt = thicken_polygon(
+				expand_polygon(floor_border, belt_additional_width),
+				belt_height
+			);
+			displace(belt->pos, { 0,floor_height,0 });
+		}
+
+		auto floor_shp = new ygl::shape();
+		auto belt_shp = new ygl::shape();
+		merge_shapes(floor_shp, floor);
+		for (int i = 1; i < num_floors; i++) {
+			merge_shapes(belt_shp, belt);
+			if (width_delta_per_floor == 0.f) {
+				displace(belt->pos, { 0,floor_height + belt_height,0 });
+				displace(floor->pos, { 0,floor_height + belt_height,0 });
+			}
+			else {
+				delete floor;
+				delete belt;
+				auto floor_border = to_2d(make_wide_line_border(
+					floor_main_points, 
+					floor_width + width_delta_per_floor*i
+				));
+				floor = thicken_polygon(
+					floor_border,
+					floor_height
+				);
+				belt = thicken_polygon(
+					offset_polygon(
+						floor_border,
+						belt_additional_width
+					)[0],
+					belt_height
+				);
+				displace(floor->pos, { 0,(floor_height + belt_height)*i,0 });
+				displace(belt->pos, { 0,(floor_height + belt_height)*i + floor_height,0 });
+			}
+			merge_shapes(floor_shp, floor);
+		}
+
+		delete floor;
+		delete belt;
+		return { floor_shp, belt_shp };
 	}
 
 	std::tuple<ygl::shape*, ygl::shape*> make_floors_from_regular(
@@ -669,7 +716,7 @@ namespace rekt {
 		params->id = id + "_building";
 		params->color1 = rekt::rand_color3f(rng);
 		params->color2 = rekt::rand_color3f(rng);
-		params->width_delta_per_floor = uniform(rng, -0.05f, 2.f);
+		params->width_delta_per_floor = uniform(rng, -0.15f, 2.f);
 		params->rng = &rng;
 
 		if (params->type == building_type::main_points) {
@@ -680,7 +727,7 @@ namespace rekt {
 					roof_type::pyramid,
 					roof_type::none
 				},
-				std::vector<float>{75.f, 10.f, 10.f, 5.f},
+				std::vector<float>{75.f, 120.f, 10.f, 5.f},
 				rng
 			);
 		}
