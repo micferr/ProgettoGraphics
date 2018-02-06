@@ -101,8 +101,35 @@ namespace rekt {
 		if (!found) scn->materials += inst->shp->mat;
 	}
 
-	ygl::vec4f rand_color(ygl::rng_pcg32& rng, float a = 1.f) {
+	ygl::vec3f rand_color3f(ygl::rng_pcg32& rng) {
+		return { ygl::next_rand1f(rng), ygl::next_rand1f(rng), ygl::next_rand1f(rng) };
+	}
+
+	ygl::vec4f rand_color4f(ygl::rng_pcg32& rng, float a = 1.f) {
 		return { ygl::next_rand1f(rng), ygl::next_rand1f(rng), ygl::next_rand1f(rng), a };
+	}
+
+	ygl::instance* make_instance(const std::string& name, ygl::shape* shp) {
+		auto inst = new ygl::instance();
+		inst->name = name;
+		inst->shp = shp;
+		return inst;
+	}
+
+	ygl::instance* make_instance(
+		const std::string& name,
+		ygl::shape* shp,
+		ygl::material* mat
+	) {
+		auto inst = new ygl::instance();
+		inst->name = name + "_inst";
+		inst->shp = shp;
+		inst->shp->name = name + "_shp";
+		inst->shp->mat = mat;
+		if (mat->name.size() == 0) { // mat->name == ""
+			mat->name = name + "_mat";
+		}
+		return inst;
 	}
 }
 
