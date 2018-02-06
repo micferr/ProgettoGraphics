@@ -54,8 +54,8 @@ namespace rekt {
 	 * Generates a sequence of n random booleans, each of which is a Bernoulli
 	 * random variable with success probability p
 	 */
-	vector<bool> bernoulli_seq(unsigned n, float p, ygl::rng_pcg32& rng) {
-		vector<bool> v;
+	std::vector<bool> bernoulli_seq(unsigned n, float p, ygl::rng_pcg32& rng) {
+		std::vector<bool> v;
 		while (n--) v.emplace_back(bernoulli(p, rng));
 		return v;
 	}
@@ -146,6 +146,44 @@ namespace rekt {
 			throw std::exception("Must pick from at least one element");
 		}
 		return v[random_weighted(weights, rng)];
+	}
+
+	/**
+	 * Returns several subvectors of the original vector.
+	 *
+	 * - keep_prob: the probability that a generic element appears in a substring
+	 * - continue_prob: the probability that, given that a generic element appears
+	 *       in a substring and its predecessor also does so, it is placed in the
+	 *       same substring as its predecessor and not in a new substring
+	 *
+	 * Let n be the number of generated substrings, and let seqs_i be the i-th 
+	 * generated substring of seq.
+	 * Then:
+	 * - i != j => intersection(seqs_i,seqs_j) = {}
+	 * - i < j => seqs_i precedes seqs_j in seq
+	 * - U_i seqs_i <= seq (in particular, it is possible that U_i seqs_i != seq)
+	 */
+	template<typename T>
+	std::vector<std::vector<T>> random_substrings(
+		ygl::rng_pcg32& rng,
+		const std::vector<T>& seq,
+		float keep_prob,
+		float continue_prob
+	) {
+		std::vector<std::vector<T>> seqs;
+		std::vector<T> s;
+		for (int i = 0; i < ; i++) {
+			if (bernoulli(keep_prob, rng)) {
+				if (s.size() == 0 || bernoulli(continue_prob, rng)) {
+					s.push_back(seq[i]);
+				}
+				else {
+					seqs.push_back(s);
+					s.clear();
+				}
+			}
+		}
+		if (s.size() > 0) seqs.push_back(s); // Last sequence
 	}
 }
 
