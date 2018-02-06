@@ -37,12 +37,12 @@ namespace rekt {
 	// Only relevant params have to be set, the others can be ignored
 	struct roof_params {
 		roof_type type = roof_type::none;
-		ygl::vec4f color = { 1,1,1,1 };
+		ygl::vec3f color1 = { 1,1,1 };
 		float roof_angle = rekt::pi / 2.f;
 
 		// CrossGabled
 		float thickness = -1.f; // Ignored if negative
-		ygl::vec4f color2 = { 1,1,1,1 };
+		ygl::vec3f color2 = { 1,1,1 };
 		float rake_overhang = 0.f;
 		float roof_overhang = 0.f;
 
@@ -91,8 +91,8 @@ namespace rekt {
 		                                   // each consecutive floor,
 		                                   // as a polygon offsetting size
 		std::string id = "";
-		ygl::vec4f color1 = { 1,1,1,1 };
-		ygl::vec4f color2 = { 1,1,1,1 };
+		ygl::vec3f color1 = { 1,1,1 };
+		ygl::vec3f color2 = { 1,1,1 };
 		ygl::rng_pcg32* rng = nullptr;
 
 		// Roof
@@ -111,8 +111,7 @@ namespace rekt {
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
 		float roof_angle,
-		float base_height = 0.f,
-		const ygl::vec4f& color = {1,1,1,1}
+		float base_height = 0.f
 	) {
 		if (roof_angle <= 0.f || roof_angle >= rekt::pi / 2.f) {
 			throw std::runtime_error("Invalid roof angle");
@@ -146,7 +145,6 @@ namespace rekt {
 			displace(shp->pos, { 0,base_height,0 });
 		}
 		shp->norm = ygl::compute_normals({}, shp->triangles, shp->quads, shp->pos);
-		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
 		return shp; 
 	}
 
@@ -160,8 +158,7 @@ namespace rekt {
 		float floor_width,
 		float roof_angle,
 		float hip_depth,
-		float base_height = 0.f,
-		const ygl::vec4f& color = {1,1,1,1}
+		float base_height = 0.f
 	) {
 		auto shp = make_roof_crossgabled_simple(
 			floor_main_points, floor_width, roof_angle, base_height
@@ -171,15 +168,13 @@ namespace rekt {
 		shp->pos[fr] += ygl::normalize(shp->pos[fr + 1] - shp->pos[fr])*hip_depth;
 		shp->pos[lr] -= ygl::normalize(shp->pos[lr] - shp->pos[lr - 1])*hip_depth;
 		shp->norm = ygl::compute_normals({}, shp->triangles, shp->quads, shp->pos);
-		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
 		return shp;
 	}
 
 	ygl::shape* make_roof_pyramid_from_border(
 		const std::vector<ygl::vec2f>& border,
 		float roof_height,
-		float base_height = 0.f,
-		const ygl::vec4f& color = { 1,1,1,1 }
+		float base_height = 0.f
 	) {
 		auto shp = new ygl::shape();
 		auto t = triangulate_opposite(to_3d(border), {});
@@ -198,7 +193,6 @@ namespace rekt {
 		if (base_height > 0.f) displace(shp->pos, { 0,base_height,0 });
 		merge_same_points(shp);
 		set_shape_normals(shp);
-		set_shape_color(shp, color);
 		return shp;
 	}
 
@@ -207,14 +201,13 @@ namespace rekt {
 		const ygl::vec2f& floor_vertex,
 		unsigned num_sides,
 		float roof_angle,
-		float base_height = 0.f,
-		const ygl::vec4f& color = { 1,1,1,1 }
+		float base_height = 0.f
 	) {
 		auto radius_segment = floor_vertex - floor_center;
 		auto base_angle = get_angle(radius_segment);
 		auto points = make_regular_polygon(num_sides, ygl::length(radius_segment), base_angle);
 		return make_roof_pyramid_from_border(
-			points, tanf(roof_angle)*ygl::length(radius_segment), base_height, color
+			points, tanf(roof_angle)*ygl::length(radius_segment), base_height
 		);
 	}
 
@@ -223,12 +216,11 @@ namespace rekt {
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
 		float roof_height,
-		float base_height = 0.f,
-		const ygl::vec4f& color = { 1,1,1,1 }
+		float base_height = 0.f
 	) {
 		auto border = to_2d(make_wide_line_border(floor_main_points, floor_width));
 		return make_roof_pyramid_from_border(
-			border, roof_height, base_height, color
+			border, roof_height, base_height
 		);
 	}
 
@@ -239,8 +231,7 @@ namespace rekt {
 		float thickness,
 		float rake_overhang,
 		float roof_overhang,
-		float base_height = 0.f,
-		const ygl::vec4f& color = {1,1,1,1}
+		float base_height = 0.f
 	) {
 		if (rake_overhang < 0.f || roof_overhang < 0.f) {
 			throw std::runtime_error("Invalid arguments.");
@@ -342,7 +333,6 @@ namespace rekt {
 			}
 		}
 		shp->norm = ygl::compute_normals({}, {}, shp->quads, shp->pos);
-		shp->color = std::vector<ygl::vec4f>(shp->pos.size(), color);
 		return shp;
 	}
 
@@ -385,22 +375,19 @@ namespace rekt {
 		return border;
 	}
 
-	ygl::shape* __make_floors_from_border(
+	std::tuple<ygl::shape*, ygl::shape*> __make_floors_from_border(
 		const std::vector<ygl::vec2f>& floor_border,
 		unsigned num_floors,
 		float floor_height,
 		float belt_height,
 		float belt_additional_width,
-		float width_delta_per_floor = 0.f,
-		const ygl::vec4f& floor_color = { 1,1,1,1 },
-		const ygl::vec4f& belt_color = { 1,1,1,1 }
+		float width_delta_per_floor = 0.f
 	) {
 		if (num_floors <= 0 || floor_height <= 0.f || 
 			belt_height < 0.f || belt_additional_width <= 0.f) {
 			throw std::runtime_error("Invalid arguments");
 		}
 		auto floor = thicken_polygon(floor_border, floor_height);
-		set_shape_color(floor, floor_color);
 		ygl::shape* belt = nullptr;
 		if (belt_height <= 0.f) { // Belt is optional
 			belt = new ygl::shape();
@@ -410,13 +397,13 @@ namespace rekt {
 				expand_polygon(floor_border, belt_additional_width), 
 				belt_height
 			);
-			set_shape_color(belt, belt_color);
 			displace(belt->pos, { 0,floor_height,0 });
 		}
-		auto shp = new ygl::shape();
-		merge_shapes(shp, floor);
+		auto floor_shp = new ygl::shape();
+		auto belt_shp = new ygl::shape();
+		merge_shapes(floor_shp, floor);
 		for (int i = 1; i < num_floors; i++) {
-			merge_shapes(shp, belt);
+			merge_shapes(belt_shp, belt);
 			if (width_delta_per_floor == 0.f) {
 				displace(belt->pos, { 0,floor_height + belt_height,0 });
 				displace(floor->pos, { 0,floor_height + belt_height,0 });
@@ -439,27 +426,23 @@ namespace rekt {
 				);
 				displace(floor->pos, { 0,(floor_height + belt_height)*i,0 });
 				displace(belt->pos, { 0,(floor_height + belt_height)*i + floor_height,0 });
-				set_shape_color(floor, floor_color);
-				set_shape_color(belt, belt_color);
 			}
-			merge_shapes(shp, floor);
+			merge_shapes(floor_shp, floor);
 		}
 
 		delete floor;
 		delete belt;
-		return shp;
+		return { floor_shp, belt_shp };
 	}
 
-	ygl::shape* make_floors_from_main_points(
+	std::tuple<ygl::shape*, ygl::shape*> make_floors_from_main_points(
 		const std::vector<ygl::vec2f>& floor_main_points,
 		float floor_width,
 		unsigned num_floors,
 		float floor_height,
 		float belt_height,
 		float belt_additional_width,
-		float width_delta_per_floor = 0.f,
-		const ygl::vec4f& floor_color = { 1,1,1,1 },
-		const ygl::vec4f& belt_color = { 1,1,1,1 }
+		float width_delta_per_floor = 0.f
 	) {
 		if (floor_width <= 0.f || num_floors <= 0 || floor_height <= 0.f || 
 			belt_height < 0.f || belt_additional_width < 0.f) {
@@ -468,12 +451,11 @@ namespace rekt {
 		auto floor_border = to_2d(make_wide_line_border(floor_main_points, floor_width));
 		return __make_floors_from_border(
 			floor_border, num_floors, floor_height,
-			belt_height, belt_additional_width, width_delta_per_floor,
-			floor_color, belt_color
+			belt_height, belt_additional_width, width_delta_per_floor
 		);
 	}
 
-	ygl::shape* make_floors_from_regular(
+	std::tuple<ygl::shape*, ygl::shape*> make_floors_from_regular(
 		const ygl::vec2f& floor_center,
 		const ygl::vec2f& floor_vertex,
 		unsigned num_sides,
@@ -481,9 +463,7 @@ namespace rekt {
 		float floor_height,
 		float belt_height,
 		float belt_additional_width,
-		float width_delta_per_floor = 0.f,
-		const ygl::vec4f& floor_color = { 1,1,1,1 },
-		const ygl::vec4f& belt_color = { 1,1,1,1 }
+		float width_delta_per_floor = 0.f
 	) {
 		auto border = make_regular_polygon(
 			num_sides,
@@ -494,8 +474,7 @@ namespace rekt {
 		return __make_floors_from_border(
 			border,
 			num_floors, floor_height,
-			belt_height, belt_additional_width, width_delta_per_floor,
-			floor_color, belt_color
+			belt_height, belt_additional_width, width_delta_per_floor
 		);
 	}
 
@@ -512,8 +491,7 @@ namespace rekt {
 		const std::vector<ygl::vec2f> points,
 		float thickness,
 		float height,
-		bool closed = false,
-		const ygl::vec4f& color = {1,1,1,1}
+		bool closed = false
 	) {
 		ygl::shape* shp;
 		if (!closed) {
@@ -531,7 +509,6 @@ namespace rekt {
 				ext_border, height, { int_border }
 			);
 		}
-		set_shape_color(shp, color);
 		return shp;
 	}
 
@@ -638,9 +615,8 @@ namespace rekt {
 		auto regwnd_shp = new ygl::shape();
 		std::tie(regwnd_shp->quads, regwnd_shp->pos) = make_parallelepidedon(1.6f, 1.f, .10f);
 		set_shape_normals(regwnd_shp);
-		set_shape_color(regwnd_shp, { 0.8f,0.8f,1.f,1.f });
 		center_points(regwnd_shp->pos);
-		regwnd_shp->mat = make_material(name_open + "_mat", { 1,1,1 }, nullptr, { 0.8f,0.8f,0.8f });
+		regwnd_shp->mat = make_material(name_open + "_mat", { 0.8f,0.8f,1.f }, nullptr, { 0.8f,0.8f,0.8f });
 		regwnd_shp->name = name_open + "_shape";
 
 		auto regwnd_close_shp = new ygl::shape();
@@ -648,8 +624,7 @@ namespace rekt {
 			make_parallelepidedon(1.f, 1.f, .10f);
 		center_points(regwnd_close_shp->pos);
 		set_shape_normals(regwnd_close_shp);
-		set_shape_color(regwnd_close_shp, { 0.3f,0.1f,0.f,1.f });
-		regwnd_close_shp->mat = make_material(name_closed + "_mat", { 1,1,1 }, nullptr, { 0,0,0 });
+		regwnd_close_shp->mat = make_material(name_closed + "_mat", { 0.3f,0.1f,0.f }, nullptr, { 0,0,0 });
 		regwnd_close_shp->name = name_closed + "_shape";
 
 		return { regwnd_shp, regwnd_close_shp };
@@ -692,8 +667,8 @@ namespace rekt {
 		params->belt_height = rekt::uniform(rng, 0.25f, 0.45f);
 		params->belt_additional_width = rekt::uniform(rng, 0.25f, 0.45f);
 		params->id = id + "_building";
-		params->color1 = rekt::rand_color(rng);
-		params->color2 = rekt::rand_color(rng);
+		params->color1 = rekt::rand_color3f(rng);
+		params->color2 = rekt::rand_color3f(rng);
 		params->width_delta_per_floor = uniform(rng, -0.05f, 0.f);
 		params->rng = &rng;
 
@@ -716,13 +691,20 @@ namespace rekt {
 				rng
 			);
 		}
-		params->roof_pars.color = rekt::rand_color(rng);
-		params->roof_pars.roof_angle = uniform(rng, pi / 10.f, pi/2.2f);
+		params->roof_pars.color1 = rekt::rand_color3f(rng);
+		params->roof_pars.roof_angle = uniform(rng, pi / 10.f, pi/3.f);
 		params->roof_pars.thickness = uniform(rng, 0.25f, 0.75f);
-		params->roof_pars.color2 = rekt::rand_color(rng);
+		params->roof_pars.color2 = rekt::rand_color3f(rng);
 		params->roof_pars.rake_overhang = uniform(rng, 0.1f, 2.f);
 		params->roof_pars.roof_overhang = uniform(rng, 0.1f, 1.f);
-		params->roof_pars.hip_depth = uniform(rng, 0.f, 2.f);
+		auto max_hip_depth = std::max<float>(std::min<float>(
+			ygl::length(params->floor_main_points[1] - params->floor_main_points[0]),
+			ygl::length(
+				params->floor_main_points.back() -
+				params->floor_main_points[params->floor_main_points.size() - 2]
+			)
+		)*0.9f, 0.f);
+		params->roof_pars.hip_depth = uniform(rng, 0.f, max_hip_depth);
 		params->roof_pars.roof_height = uniform(rng, 3.f, 13.f);
 
 		params->win_pars.name = id + "_wnd";
@@ -738,7 +720,7 @@ namespace rekt {
 
 	// Whole house
 
-	ygl::shape* make_roof_from_params(const building_params& params) {
+	std::tuple<ygl::shape*, ygl::shape*> make_roof_from_params(const building_params& params) {
 		const auto& r_pars = params.roof_pars; // Shorter alias
 		auto base_height = get_building_height(
 			params.num_floors, params.floor_height, params.belt_height
@@ -747,108 +729,125 @@ namespace rekt {
 			params.floor_width +
 			params.width_delta_per_floor * (params.num_floors - 1);
 		
+		ygl::shape* r_shp = nullptr; // Main body of the roof
+		ygl::shape* t_shp = nullptr; // Roof thickness with overhangs
+
 		switch (r_pars.type) {
 		case roof_type::none:
-			return new ygl::shape(); // Empty shape
-		case roof_type::crossgabled: {
+			r_shp = new ygl::shape(); // Empty shape
+			break;
+		case roof_type::crossgabled: 
 			if (params.type != building_type::main_points) {
 				throw std::runtime_error("Invalid parameters");
 			}
-			auto r_shp = make_roof_crossgabled_simple(
+			r_shp = make_roof_crossgabled_simple(
 				params.floor_main_points,
 				floor_width,
 				r_pars.roof_angle,
-				base_height,
-				r_pars.color
+				base_height
 			);
 			if (r_pars.thickness > 0.f) {
-				auto thickness_shp = make_roof_crossgabled_thickness(
+				t_shp = make_roof_crossgabled_thickness(
 					params.floor_main_points, floor_width, r_pars.roof_angle,
 					r_pars.thickness, r_pars.rake_overhang, r_pars.roof_overhang,
-					base_height, r_pars.color2
+					base_height
 				);
-				merge_shapes(r_shp, thickness_shp);
-				delete thickness_shp;
 			}
-			return r_shp;
-		}
+			break;
 		case roof_type::crosshipped:
 			if (params.type != building_type::main_points) {
 				throw std::runtime_error("Invalid parameters");
 			}
-			return make_roof_crosshipped_simple(
+			r_shp = make_roof_crosshipped_simple(
 				params.floor_main_points, floor_width, r_pars.roof_angle,
-				r_pars.hip_depth, base_height, r_pars.color
+				r_pars.hip_depth, base_height
 			);
+			break;
 		case roof_type::pyramid:
 			switch (params.type) {
 			case building_type::main_points:
-				return make_roof_pyramid_from_main_points(
+				r_shp = make_roof_pyramid_from_main_points(
 					params.floor_main_points, floor_width, r_pars.roof_height,
-					base_height, r_pars.color
+					base_height
 				);
+				break;
 			case building_type::border:
-				return make_roof_pyramid_from_border(
-					params.floor_border, r_pars.roof_height, base_height, r_pars.color
+				r_shp = make_roof_pyramid_from_border(
+					params.floor_border, r_pars.roof_height, base_height
 				);
+				break;
 			case building_type::regular:
-				return make_roof_pyramid_from_border(
+				r_shp = make_roof_pyramid_from_border(
 					make_regular_polygon(
 						params.num_sides, 
 						params.radius + params.width_delta_per_floor*(params.num_floors-1), 
 						params.reg_base_angle
 					),
 					r_pars.roof_height,
-					base_height,
-					r_pars.color
+					base_height
 				);
+				break;
 			default:
 				throw std::runtime_error("Invalid building type");
 			}
+			break;
 		default:
 			throw std::runtime_error("Invalid roof type");
 		}
+		return { r_shp, t_shp != nullptr ? t_shp : new ygl::shape() };
 	}
 
 	std::vector<ygl::instance*> make_building(const building_params& params) {
 		std::vector<ygl::instance*> instances;
 		
-		auto h_inst = new ygl::instance();
-		h_inst->name = params.id + "_inst";
+		std::tuple<ygl::shape*, ygl::shape*> h_shp;
 		switch (params.type) {
 		case building_type::main_points:
-			h_inst->shp = make_floors_from_main_points(
+			h_shp = make_floors_from_main_points(
 				params.floor_main_points, params.floor_width, params.num_floors,
 				params.floor_height, params.belt_height, params.belt_additional_width,
-				params.width_delta_per_floor,
-				params.color1, params.color2
+				params.width_delta_per_floor
 			);
 			break;
 		case building_type::border:
-			h_inst->shp = make_floors_from_border(
+			h_shp = make_floors_from_border(
 				params.floor_border, params.num_floors, params.floor_height,
 				params.belt_height, params.belt_additional_width,
-				params.width_delta_per_floor,
-				params.color1, params.color2
+				params.width_delta_per_floor
 			);
 			break;
 		case building_type::regular:
-			h_inst->shp = make_floors_from_border(
+			h_shp = make_floors_from_border(
 				make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle),
 				params.num_floors, params.floor_height, params.belt_height,
-				params.belt_additional_width, params.width_delta_per_floor,
-				params.color1, params.color2
+				params.belt_additional_width, params.width_delta_per_floor
 			);
 			break;
 		default:
 			throw std::runtime_error("Invalid building type");
 		}
-		h_inst->shp->name = params.id + "_shp";
-		auto roof_shp = make_roof_from_params(params);
-		merge_shapes(h_inst->shp, roof_shp);
-		delete roof_shp;
-		h_inst->shp->mat = make_material(params.id + "_mat", { 1,1,1 }, nullptr, { 0,0,0 });
-		instances += h_inst;
+		instances += make_instance(
+			params.id + "_h1",
+			std::get<0>(h_shp),
+			make_material("", params.color1)
+		);
+		instances += make_instance(
+			params.id + "_h2",
+			std::get<1>(h_shp),
+			make_material("", params.color2)
+		);
+
+		auto r_shp = make_roof_from_params(params);
+		instances += make_instance(
+			params.id + "_rr",
+			std::get<0>(r_shp),
+			make_material("", params.roof_pars.color1)
+		);
+		instances += make_instance(
+			params.id + "_rt",
+			std::get<1>(r_shp),
+			make_material("", params.roof_pars.color2)
+		);
 		
 		auto w_insts = make_windows(params);
 		instances.insert(instances.end(), w_insts.begin(), w_insts.end());
