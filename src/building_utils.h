@@ -90,6 +90,7 @@ namespace rekt {
 		// Type == Border
 		std::vector<ygl::vec2f> floor_border = {};
 		// Type == Regular
+		ygl::vec2f floor_center = { 0,0 };
 		unsigned num_sides = 3;
 		float radius = 1.f;
 		float reg_base_angle = 0.f;
@@ -217,6 +218,7 @@ namespace rekt {
 		auto radius_segment = floor_vertex - floor_center;
 		auto base_angle = get_angle(radius_segment);
 		auto points = make_regular_polygon(num_sides, ygl::length(radius_segment), base_angle);
+		for (auto& p : points) p += floor_center;
 		return make_roof_pyramid_from_border(
 			points, tanf(roof_angle)*ygl::length(radius_segment), base_height
 		);
@@ -514,6 +516,7 @@ namespace rekt {
 	}
 
 	std::tuple<ygl::shape*, ygl::shape*> make_floors_from_regular(
+		const ygl::vec2f& floor_center,
 		unsigned num_sides,
 		float radius,
 		float base_angle,
@@ -528,6 +531,7 @@ namespace rekt {
 			radius,
 			base_angle
 		);
+		for (auto& p : floor_border) p += floor_center;
 
 		// This function is mostly copy-pasted from __make_floors_from_border
 		// Will fix later :)
@@ -560,6 +564,7 @@ namespace rekt {
 				auto floor_border = make_regular_polygon(
 					num_sides, radius+width_delta_per_floor*i, base_angle
 				);
+				for (auto& p : floor_border) p += floor_center;
 				floor = thicken_polygon(
 					floor_border,
 					floor_height
@@ -663,6 +668,7 @@ namespace rekt {
 					params.radius + params.width_delta_per_floor*i, 
 					params.reg_base_angle
 				);
+				for (auto& p : border) p += params.floor_center;
 				break;
 			default:
 				throw std::runtime_error("Invalid building type");
@@ -755,15 +761,16 @@ namespace rekt {
 		{ 0,0 }, num_segments, rekt::pi / 2.f,
 			[&rng]() {
 				float v = 0.f;
-				while (v == 0.f) v = rekt::uniform(rng, -rekt::pi / 4.f, rekt::pi / 4.f);
+				while (v == 0.f) v = rekt::uniform(rng, -rekt::pi / 5.f, rekt::pi / 5.f);
 				return v;
 			},
 			[&rng]() {return rekt::gaussian(rng, 10.f, 1.f);}
 		);
-		params->floor_width = rekt::uniform(rng, 5.f, 15.f);
+		params->floor_width = rekt::uniform(rng, 10.f, 25.f);
 		params->floor_border = { {10,10},{0,5},{-10,10},{-5,0},{-10,-10},{0,-5},{10,-10},{5,0} };
+		params->floor_center = { 0,0 };
 		params->num_sides = ygl::next_rand1i(rng, 2) + 3;
-		params->radius = uniform(rng, 5.f, 15.f);
+		params->radius = uniform(rng, 10.f, 15.f);
 		params->reg_base_angle = uniform(rng, 0.f, pi);
 
 		params->num_floors = ygl::next_rand1i(rng, 6) + 3;
@@ -843,6 +850,7 @@ namespace rekt {
 			);
 		case building_type::regular:
 			return make_floors_from_regular(
+				params.floor_center,
 				params.num_sides, params.radius, params.reg_base_angle,
 				params.num_floors, params.floor_height, params.belt_height,
 				params.belt_additional_width, params.width_delta_per_floor
@@ -913,17 +921,20 @@ namespace rekt {
 					base_height
 				);
 				break;
-			case building_type::regular:
+			case building_type::regular: {
+				auto reg_border = make_regular_polygon(
+					params.num_sides,
+					params.radius + params.width_delta_per_floor*(params.num_floors - 1),
+					params.reg_base_angle
+				);
+				for (auto& p : reg_border) p += params.floor_center;
 				r_shp = make_roof_pyramid_from_border(
-					make_regular_polygon(
-						params.num_sides, 
-						params.radius + params.width_delta_per_floor*(params.num_floors-1), 
-						params.reg_base_angle
-					),
+					reg_border,
 					r_pars.roof_height,
 					base_height
 				);
 				break;
+			}
 			default:
 				throw std::runtime_error("Invalid building type");
 			}
@@ -941,7 +952,8 @@ namespace rekt {
 			*params.rng,
 			params.floor_main_points,
 			params.roof_pars.keep_prob,
-			params.roof_pars.continue_prob
+			params.roof_pars.continue_prob,
+			1
 		);
 
 		if (mainpts_subs.size() == 1 &&
@@ -959,7 +971,10 @@ namespace rekt {
 		return mainpts_subs;
 	}
 
-	std::vector<ygl::instance*> make_building(const building_params& params) {
+	std::vector<ygl::instance*> make_building(
+		const building_params& params,
+		float base_height = 0.f
+	) {
 		std::vector<ygl::instance*> instances;
 		
 		auto h_shp = make_floors_from_params(params);
@@ -989,6 +1004,10 @@ namespace rekt {
 		auto w_insts = make_windows(params);
 		//instances.insert(instances.end(), w_insts.begin(), w_insts.end());
 
+		for (auto i : instances) {
+			translate(i, ygl::vec3f{ 0, base_height, 0 });
+		}
+
 		// Recursive buildings
 		if (params.type == building_type::main_points &&
 			//params.roof_pars.type == roof_type::none &&
@@ -1009,11 +1028,12 @@ namespace rekt {
 			auto total_width_offset = params.width_delta_per_floor*(params.num_floors - 1);
 			rec_params->floor_width = std::min(
 				rec_params->floor_width, 
-				(params.floor_width+total_width_offset)*0.85f);
+				(params.floor_width+total_width_offset)*0.85f
+			);
 			rec_params->num_sides = params.num_sides;
 			rec_params->radius = std::min(
 				rec_params->radius, 
-				(params.floor_width+total_width_offset)/2.f*0.85f
+				(params.floor_width+total_width_offset)/2.f*0.75f
 			);
 			rec_params->reg_base_angle = params.reg_base_angle;
 			
@@ -1033,11 +1053,14 @@ namespace rekt {
 				}
 				else {
 					rec_params->type = building_type::regular;
+					rec_params->floor_center = mainpts[0];
 					rec_params->roof_pars.type = roof_type::pyramid;
 				}
-				auto rec_insts = make_building(*rec_params);
+				auto rec_insts = make_building(
+					*rec_params,
+					base_height + get_building_height(params.num_floors, params.floor_height, params.belt_height)
+				);
 				for (auto ri : rec_insts) {
-					translate(ri, ygl::vec3f{0, get_building_height(params.num_floors,params.floor_height,params.belt_height), 0});
 					instances.push_back(ri);
 				}
 			}
