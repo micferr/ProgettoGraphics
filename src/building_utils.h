@@ -55,12 +55,12 @@ namespace rekt {
 		float roof_height = 5.f; // We can't use angle since it's different for each edge
 
 		// None
-		float recursive_prob = 0.f; // Probability to build new buildings on top of the current one
+		float recursive_prob = 0.7f; // Probability to build new buildings on top of the current one
 		                            // (The probablity is among building with roof_pars.type == none)
 		building_params* recursive_params = nullptr; // If nullptr, see make_rand_building_params
-		float keep_prob = 0.5f; // Keep probability for main points 
+		float keep_prob = 0.9f; // Keep probability for main points 
 		                        // (see random_substrings in prob_utils.h)
-		float continue_prob = 0.8f; // Continue probability for main points
+		float continue_prob = 0.85f; // Continue probability for main points
 									// (see random_substrings in prob_utils.h)
 	};
 
@@ -773,7 +773,7 @@ namespace rekt {
 		params->id = id + "_building";
 		params->color1 = rekt::rand_color3f(rng);
 		params->color2 = rekt::rand_color3f(rng);
-		params->width_delta_per_floor = uniform(rng, -0.15f, 2.f);
+		params->width_delta_per_floor = uniform(rng, -0.15f, .25f);
 		params->rng = &rng;
 
 		if (params->type == building_type::main_points) {
@@ -787,6 +787,7 @@ namespace rekt {
 				std::vector<float>{75.f, 10.f, 10.f, 5.f},
 				rng
 			);
+			params->roof_pars.type = roof_type::none;
 		}
 		else {
 			params->roof_pars.type = rekt::choose_random_weighted(
@@ -933,6 +934,31 @@ namespace rekt {
 		return { r_shp, t_shp != nullptr ? t_shp : new ygl::shape() };
 	}
 
+	std::vector<std::vector<ygl::vec2f>> recursive_main_points(
+		const building_params& params
+	) {
+		auto mainpts_subs = random_substrings(
+			*params.rng,
+			params.floor_main_points,
+			params.roof_pars.keep_prob,
+			params.roof_pars.continue_prob
+		);
+
+		if (mainpts_subs.size() == 1 &&
+			mainpts_subs.front().size() != 1 && // Recursive towers allowed
+			// Recursive building spans whole roof
+			mainpts_subs.front().size() == params.floor_main_points.size() 
+			) {
+			if (bernoulli(0.5f, *params.rng)) {
+				mainpts_subs.front().erase(mainpts_subs.front().begin());
+			}
+			else {
+				mainpts_subs.front().pop_back();
+			}
+		}
+		return mainpts_subs;
+	}
+
 	std::vector<ygl::instance*> make_building(const building_params& params) {
 		std::vector<ygl::instance*> instances;
 		
@@ -961,7 +987,61 @@ namespace rekt {
 		);
 		
 		auto w_insts = make_windows(params);
-		instances.insert(instances.end(), w_insts.begin(), w_insts.end());
+		//instances.insert(instances.end(), w_insts.begin(), w_insts.end());
+
+		// Recursive buildings
+		if (params.type == building_type::main_points &&
+			//params.roof_pars.type == roof_type::none &&
+			bernoulli(params.roof_pars.recursive_prob, *params.rng)
+		) {
+			auto rec_params =
+				params.roof_pars.recursive_params != nullptr ?
+				params.roof_pars.recursive_params :
+				make_rand_building_params(
+					*params.rng,
+					params.win_pars.open_window_shape,
+					params.win_pars.closed_window_shape,
+					params.id + "_rec"
+				);
+			auto mainpts_subs = recursive_main_points(params);
+
+			// Necessary parameter adjustments
+			auto total_width_offset = params.width_delta_per_floor*(params.num_floors - 1);
+			rec_params->floor_width = std::min(
+				rec_params->floor_width, 
+				(params.floor_width+total_width_offset)*0.85f);
+			rec_params->num_sides = params.num_sides;
+			rec_params->radius = std::min(
+				rec_params->radius, 
+				(params.floor_width+total_width_offset)/2.f*0.85f
+			);
+			rec_params->reg_base_angle = params.reg_base_angle;
+			
+			// Color homogeneity
+			rec_params->color1 = params.color1;
+			rec_params->color2 = params.color2;
+			rec_params->roof_pars.color1 = params.roof_pars.color1;
+			rec_params->roof_pars.color2 = params.roof_pars.color2;
+			
+			for (int i = 0; i < mainpts_subs.size(); i++) {
+				rec_params->id += std::to_string(i);
+				const auto& mainpts = mainpts_subs[i];
+				if (mainpts.size() > 1) {
+					rec_params->type = building_type::main_points;
+					rec_params->floor_main_points = mainpts;
+					rec_params->roof_pars.type = roof_type::crossgabled;
+				}
+				else {
+					rec_params->type = building_type::regular;
+					rec_params->roof_pars.type = roof_type::pyramid;
+				}
+				auto rec_insts = make_building(*rec_params);
+				for (auto ri : rec_insts) {
+					translate(ri, ygl::vec3f{0, get_building_height(params.num_floors,params.floor_height,params.belt_height), 0});
+					instances.push_back(ri);
+				}
+			}
+		}
 
 		return instances;
 	}
