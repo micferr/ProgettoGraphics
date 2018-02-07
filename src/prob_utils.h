@@ -172,7 +172,7 @@ namespace rekt {
 	) {
 		std::vector<std::vector<T>> seqs;
 		std::vector<T> s;
-		for (int i = 0; i < ; i++) {
+		for (int i = 0; i < seq.size(); i++) {
 			if (bernoulli(keep_prob, rng)) {
 				if (s.size() == 0 || bernoulli(continue_prob, rng)) {
 					s.push_back(seq[i]);
@@ -182,8 +182,15 @@ namespace rekt {
 					s.clear();
 				}
 			}
+			else {
+				if (s.size() != 0) {
+					seqs.push_back(s);
+					s.clear();
+				}
+			}
 		}
 		if (s.size() > 0) seqs.push_back(s); // Last sequence
+		return seqs;
 	}
 }
 
