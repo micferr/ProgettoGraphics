@@ -168,7 +168,8 @@ namespace rekt {
 		ygl::rng_pcg32& rng,
 		const std::vector<T>& seq,
 		float keep_prob,
-		float continue_prob
+		float continue_prob,
+		bool skip_after_sequence_end = 0
 	) {
 		std::vector<std::vector<T>> seqs;
 		std::vector<T> s;
@@ -186,6 +187,7 @@ namespace rekt {
 				if (s.size() != 0) {
 					seqs.push_back(s);
 					s.clear();
+					i += skip_after_sequence_end;
 				}
 			}
 		}
