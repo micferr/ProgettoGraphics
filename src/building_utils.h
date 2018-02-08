@@ -968,6 +968,12 @@ namespace yb {
 				mainpts_subs.front().pop_back();
 			}
 		}
+		for (auto& sub : mainpts_subs) {
+			if (sub.size() >= 2) {
+				sub[0] += (sub[1] - sub[0]) / 2.f;
+				sub.back() -= (sub.back() - sub[sub.size() - 1]) / 2.f;
+			}
+		}
 		return mainpts_subs;
 	}
 
