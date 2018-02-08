@@ -6,7 +6,7 @@
 
 #include "yocto\yocto_gl.h"
 
-namespace rekt {
+namespace yb {
 
 	/**
 	 * Returns a random boolean; true is returned with p probability

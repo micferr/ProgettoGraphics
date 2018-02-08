@@ -3,7 +3,7 @@
 
 #include "yocto\yocto_gl.h"
 
-namespace rekt {
+namespace yb {
 
 	ygl::material* make_material(const std::string& name, const ygl::vec3f& kd,
 		ygl::texture* kd_txt = nullptr, const ygl::vec3f& ks = { 0.2f, 0.2f, 0.2f },

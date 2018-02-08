@@ -4,7 +4,7 @@
 #include <functional>
 #include <vector>
 
-namespace rekt {
+namespace yb {
 
 	/**
 	 * A simple tree implementation.

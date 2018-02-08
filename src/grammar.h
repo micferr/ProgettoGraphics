@@ -7,7 +7,7 @@
 
 #include "node.h"
 
-namespace rekt {
+namespace yb {
 
 	using std::string;
 	using std::vector;

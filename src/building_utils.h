@@ -22,7 +22,7 @@
  * These mode may however offer less customizability.
  */
 
-namespace rekt {
+namespace yb {
 
 	/// Parameter enums and structs
 
@@ -40,7 +40,7 @@ namespace rekt {
 	struct roof_params {
 		roof_type type = roof_type::none;
 		ygl::vec3f color1 = { 1,1,1 };
-		float roof_angle = rekt::pi / 2.f;
+		float roof_angle = yb::pi / 2.f;
 
 		// CrossGabled
 		float thickness = -1.f; // Ignored if negative
@@ -125,13 +125,13 @@ namespace rekt {
 		float roof_angle,
 		float base_height = 0.f
 	) {
-		if (roof_angle <= 0.f || roof_angle >= rekt::pi / 2.f) {
+		if (roof_angle <= 0.f || roof_angle >= yb::pi / 2.f) {
 			throw std::runtime_error("Invalid roof angle");
 		}
 		float center_height = tanf(roof_angle)*floor_width / 2.f;
 		auto _floor_main_points = to_3d(floor_main_points);
 		ygl::shape* shp = new ygl::shape();
-		shp->pos = rekt::make_wide_line_border(floor_main_points, floor_width);
+		shp->pos = yb::make_wide_line_border(floor_main_points, floor_width);
 		auto mid_point = (shp->pos[0] + shp->pos.back()) / 2.f;
 		mid_point.y += center_height;
 		shp->pos.push_back(mid_point);
@@ -267,7 +267,7 @@ namespace rekt {
 		//		- A = pi - C - A = pi - pi/2 - roof_angle = pi/2 - roof_angle
 		//		For the law of sines, a/sin(A) = b/sin(B) = b/sin(pi/2) = b
 		//		-> b = a/sin(A) = thickness / sin(pi/2 - roof_angle)
-		auto thick_height = thickness / sinf(rekt::pi / 2.f - roof_angle);
+		auto thick_height = thickness / sinf(yb::pi / 2.f - roof_angle);
 		auto thick_width = thickness / sinf(roof_angle); // Same calculations
 
 		// For each main point we generate six vertexes:
@@ -321,7 +321,7 @@ namespace rekt {
 			}
 		}
 		if (base_height != 0.f) {
-			rekt::displace(shp->pos, { 0,base_height,0 });
+			yb::displace(shp->pos, { 0,base_height,0 });
 		}
 		if (rake_overhang > 0.f) {
 			auto dir = ygl::normalize(shp->pos[6] - shp->pos[0]);
@@ -337,7 +337,7 @@ namespace rekt {
 			for (int i = 0; i < shp->pos.size(); i+=6) {
 				auto to_top = ygl::normalize(shp->pos[i + 2] - shp->pos[i]);
 				//Law of sines again
-				auto length = roof_overhang / sinf(rekt::pi / 2.f - roof_angle);
+				auto length = roof_overhang / sinf(yb::pi / 2.f - roof_angle);
 				shp->pos[i] -= to_top*length;
 				shp->pos[i + 3] -= to_top*length;
 				to_top = { -to_top.x, to_top.y, -to_top.z };
@@ -758,15 +758,15 @@ namespace rekt {
 		);
 		int num_segments = choose_random(std::vector<int>{ 3,4,5,6,7,8 }, rng);
 		params->floor_main_points = make_segmented_line(
-		{ 0,0 }, num_segments, rekt::pi / 2.f,
+		{ 0,0 }, num_segments, yb::pi / 2.f,
 			[&rng]() {
 				float v = 0.f;
-				while (v == 0.f) v = rekt::uniform(rng, -rekt::pi / 5.f, rekt::pi / 5.f);
+				while (v == 0.f) v = yb::uniform(rng, -yb::pi / 5.f, yb::pi / 5.f);
 				return v;
 			},
-			[&rng]() {return rekt::gaussian(rng, 10.f, 1.f);}
+			[&rng]() {return yb::gaussian(rng, 10.f, 1.f);}
 		);
-		params->floor_width = rekt::uniform(rng, 10.f, 25.f);
+		params->floor_width = yb::uniform(rng, 10.f, 25.f);
 		params->floor_border = { {10,10},{0,5},{-10,10},{-5,0},{-10,-10},{0,-5},{10,-10},{5,0} };
 		params->floor_center = { 0,0 };
 		params->num_sides = ygl::next_rand1i(rng, 2) + 3;
@@ -774,17 +774,17 @@ namespace rekt {
 		params->reg_base_angle = uniform(rng, 0.f, pi);
 
 		params->num_floors = ygl::next_rand1i(rng, 6) + 3;
-		params->floor_height = rekt::uniform(rng, 2.5f, 5.f);
-		params->belt_height = rekt::uniform(rng, 0.25f, 0.45f);
-		params->belt_additional_width = rekt::uniform(rng, 0.25f, 0.45f);
+		params->floor_height = yb::uniform(rng, 2.5f, 5.f);
+		params->belt_height = yb::uniform(rng, 0.25f, 0.45f);
+		params->belt_additional_width = yb::uniform(rng, 0.25f, 0.45f);
 		params->id = id + "_building";
-		params->color1 = rekt::rand_color3f(rng);
-		params->color2 = rekt::rand_color3f(rng);
+		params->color1 = yb::rand_color3f(rng);
+		params->color2 = yb::rand_color3f(rng);
 		params->width_delta_per_floor = uniform(rng, -0.15f, .25f);
 		params->rng = &rng;
 
 		if (params->type == building_type::main_points) {
-			params->roof_pars.type = rekt::choose_random_weighted(
+			params->roof_pars.type = yb::choose_random_weighted(
 				std::vector<roof_type>{ 
 					roof_type::crossgabled,
 					roof_type::crosshipped,
@@ -797,16 +797,16 @@ namespace rekt {
 			params->roof_pars.type = roof_type::none;
 		}
 		else {
-			params->roof_pars.type = rekt::choose_random_weighted(
+			params->roof_pars.type = yb::choose_random_weighted(
 				std::vector<roof_type>{roof_type::pyramid, roof_type::none},
 				std::vector<float>{85.f, 15.f},
 				rng
 			);
 		}
-		params->roof_pars.color1 = rekt::rand_color3f(rng);
+		params->roof_pars.color1 = yb::rand_color3f(rng);
 		params->roof_pars.roof_angle = uniform(rng, pi / 10.f, pi/3.f);
 		params->roof_pars.thickness = uniform(rng, 0.25f, 0.75f);
-		params->roof_pars.color2 = rekt::rand_color3f(rng);
+		params->roof_pars.color2 = yb::rand_color3f(rng);
 		params->roof_pars.rake_overhang = uniform(rng, 0.1f, 2.f);
 		params->roof_pars.roof_overhang = uniform(rng, 0.1f, 1.f);
 		auto max_hip_depth = std::max<float>(std::min<float>(
@@ -981,28 +981,28 @@ namespace rekt {
 		instances += make_instance(
 			params.id + "_h1",
 			std::get<0>(h_shp),
-			make_material("", params.color1)
+			make_material("", params.color1, nullptr, { 0,0,0 })
 		);
 		instances += make_instance(
 			params.id + "_h2",
 			std::get<1>(h_shp),
-			make_material("", params.color2)
+			make_material("", params.color2, nullptr, { 0,0,0 })
 		);
 
 		auto r_shp = make_roof_from_params(params);
 		instances += make_instance(
 			params.id + "_rr",
 			std::get<0>(r_shp),
-			make_material("", params.roof_pars.color1)
+			make_material("", params.roof_pars.color1, nullptr, { 0,0,0 })
 		);
 		instances += make_instance(
 			params.id + "_rt",
 			std::get<1>(r_shp),
-			make_material("", params.roof_pars.color2)
+			make_material("", params.roof_pars.color2, nullptr, { 0,0,0 })
 		);
 		
 		auto w_insts = make_windows(params);
-		//instances.insert(instances.end(), w_insts.begin(), w_insts.end());
+		instances.insert(instances.end(), w_insts.begin(), w_insts.end());
 
 		for (auto i : instances) {
 			translate(i, ygl::vec3f{ 0, base_height, 0 });

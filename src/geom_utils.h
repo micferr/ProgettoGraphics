@@ -8,7 +8,7 @@
 #include "clipper\clipper.hpp"
 #include "yocto_utils.h"
 
-namespace rekt {
+namespace yb {
 	const float pi = 3.14159265359f;
 
 	ygl::vec2f centroid(const std::vector<ygl::vec2f>& points) {
@@ -622,17 +622,15 @@ namespace rekt {
 		return thicken_polygon(to_3d(border), thickness, _holes, smooth_normals);
 	}
 
-/**
- * If origin_center is true, the model is centered on (0,0,0),
- * else its center is (width,height,depth)/2
- */
-#define DEFAULT_ORIGIN_CENTER false
-
+	/**
+	 * If origin_center is true, the model is centered on (0,0,0),
+	 * else its center is (width,height,depth)/2
+	 */
 	std::tuple<std::vector<ygl::vec4i>, std::vector<ygl::vec3f>> 
 		make_parallelepidedon(
 			float width, float height, float depth,
 			float x = 0.f, float y = 0.f, float z = 0.f,
-			bool origin_center = DEFAULT_ORIGIN_CENTER
+			bool origin_center = false
 		) {
 		auto t = ygl::make_cube();
 		auto w = width / 2.f,
@@ -649,8 +647,6 @@ namespace rekt {
 		}
 		return t;
 	}
-
-#undef DEFAULT_ORIGIN_CENTER
 
 	/**
 	 * Adds equilateral triangles on each side of the given polygon.
