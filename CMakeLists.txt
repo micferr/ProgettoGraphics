@@ -49,13 +49,6 @@ if(UNIX AND NOT APPLE)
 endif(UNIX AND NOT APPLE)
 
 add_library(yocto_gl
-	src/grammar.h
-	src/node.h
-	src/building_utils.h
-	src/geom_utils.h
-	src/prob_utils.h
-	src/yocto_utils.h
-
 	src/yocto/yocto_gl.h
 	src/yocto/yocto_gl.cpp
 	src/yocto/ext/stb_image.cpp
@@ -86,7 +79,24 @@ add_library(clipper
 	src/clipper/clipper.cpp
 )
 
-add_executable(test_main src/test_main.cpp)
+add_executable(main src/main.cpp
+	src/grammar.h
+	src/node.h
+	src/building_utils.h
+	src/geom_utils.h
+	src/prob_utils.h
+	src/yocto_utils.h
+)
+target_link_libraries(main yocto_gl poly2tri clipper)
+
+add_executable(test_main src/test_main.cpp
+	src/grammar.h
+	src/node.h
+	src/building_utils.h
+	src/geom_utils.h
+	src/prob_utils.h
+	src/yocto_utils.h
+)
 target_link_libraries(test_main yocto_gl poly2tri clipper)
 
 add_executable(ytestgen src/apps/ytestgen.cpp src/yocto/yocto_gl.h)
@@ -102,11 +112,9 @@ target_link_libraries(yimproc yocto_gl)
 if(YOCTO_OPENGL)
     add_executable(yview src/apps/yview.cpp src/yocto/yocto_gl.h)
     add_executable(yitrace src/apps/yitrace.cpp src/yocto/yocto_gl.h)
-    add_executable(ygltfview src/apps/ygltfview.cpp src/yocto/yocto_gl.h src/yocto/yocto_gltf.h src/yocto/yocto_gltf.cpp)
     add_executable(yimview src/apps/yimview.cpp src/yocto/yocto_gl.h)
 
     target_link_libraries(yview yocto_gl)
     target_link_libraries(yitrace yocto_gl)
-    target_link_libraries(ygltfview yocto_gl)
     target_link_libraries(yimview yocto_gl)
 endif(YOCTO_OPENGL)

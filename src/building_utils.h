@@ -1098,8 +1098,8 @@ namespace yb {
 			make_material("", params.roof_pars.color2, nullptr, { 0,0,0 })
 		);
 		
-		// auto w_insts = make_windows(params);
-		// instances.insert(instances.end(), w_insts.begin(), w_insts.end());
+		auto w_insts = make_windows(params);
+		instances.insert(instances.end(), w_insts.begin(), w_insts.end());
 
 		for (auto i : instances) {
 			translate(i, ygl::vec3f{ 0, base_height, 0 });
