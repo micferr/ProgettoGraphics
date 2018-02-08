@@ -11,7 +11,7 @@ namespace yb {
 	/**
 	 * Returns a random boolean; true is returned with p probability
 	 */
-	bool bernoulli(float p, ygl::rng_pcg32& rng) {
+	bool bernoulli(ygl::rng_pcg32& rng, float p) {
 		if (p < 0 || p > 1) throw std::exception("Invalid probability value.");
 		return ygl::next_rand1f(rng) <= p;
 	}
@@ -23,14 +23,14 @@ namespace yb {
 	 * Note that the expected runtime is O(max-min)
 	 */
 	int geometric(
-		float p,
 		ygl::rng_pcg32& rng,
+		float p,
 		unsigned min = 0,
 		unsigned max = std::numeric_limits<unsigned>::max()
 	) {
 		if (max < min) throw std::exception("Invalid min-max range");
 		int n = min;
-		while (n < max && !bernoulli(p, rng)) n++;
+		while (n < max && !bernoulli(rng, p)) n++;
 		return n;
 	}
 
@@ -42,21 +42,21 @@ namespace yb {
 	 * computes the value of a geometric r.v. with parameter p' = 1-p)
 	 */
 	int consecutive_bernoulli_successes(
-		float p,
 		ygl::rng_pcg32& rng,
+		float p,
 		unsigned min = 0,
 		unsigned max = std::numeric_limits<unsigned>::max()
 	) {
-		return geometric(1.f - p, rng, min, max);
+		return geometric(rng, 1.f - p, min, max);
 	}
 
 	/**
 	 * Generates a sequence of n random booleans, each of which is a Bernoulli
 	 * random variable with success probability p
 	 */
-	std::vector<bool> bernoulli_seq(unsigned n, float p, ygl::rng_pcg32& rng) {
+	std::vector<bool> bernoulli_seq(ygl::rng_pcg32& rng, unsigned n, float p) {
 		std::vector<bool> v;
-		while (n--) v.emplace_back(bernoulli(p, rng));
+		while (n--) v.emplace_back(bernoulli(rng, p));
 		return v;
 	}
 
@@ -70,7 +70,7 @@ namespace yb {
 		// E*p + p = 1
 		// p(E+1) = 1
 		// p = 1/(E+1)
-		if (n <= 0.f) throw std::exception("Invalid expected value for geometric r.v.");
+		if (n < 0.f) throw std::exception("Invalid expected value for geometric r.v.");
 		return 1.f / (n + 1.f);
 	}
 
@@ -109,7 +109,7 @@ namespace yb {
 	 * Returns a random int in [0, weights.size()), with integer i
 	 * having a probability of being chosen of weights[i]/(sum_j weights[j])
 	 */
-	int random_weighted(const std::vector<float>& weights, ygl::rng_pcg32& rng) {
+	int random_weighted(ygl::rng_pcg32& rng, const std::vector<float>& weights) {
 		float weights_total = 0.f;
 		for (auto w : weights) weights_total += w;
 		float r = ygl::next_rand1f(rng, 0.f, weights_total);
@@ -125,7 +125,7 @@ namespace yb {
 	 * Choose a random element from a vector
 	 */
 	template<typename T>
-	T choose_random(const std::vector<T>& v, ygl::rng_pcg32& rng) {
+	T choose_random(ygl::rng_pcg32& rng, const std::vector<T>& v) {
 		return v[ygl::next_rand1i(rng, v.size())];
 	}
 
@@ -135,9 +135,9 @@ namespace yb {
 	 */
 	template<typename T>
 	T choose_random_weighted(
+		ygl::rng_pcg32& rng,
 		const std::vector<T>& v,
-		const std::vector<float> weights, 
-		ygl::rng_pcg32& rng
+		const std::vector<float> weights
 	) {
 		if (v.size() != weights.size()) {
 			throw std::exception("v and weights must have equal size");
@@ -145,7 +145,7 @@ namespace yb {
 		if (v.size() == 0) {
 			throw std::exception("Must pick from at least one element");
 		}
-		return v[random_weighted(weights, rng)];
+		return v[random_weighted(rng, weights)];
 	}
 
 	/**
@@ -169,13 +169,13 @@ namespace yb {
 		const std::vector<T>& seq,
 		float keep_prob,
 		float continue_prob,
-		bool skip_after_sequence_end = 0
+		int skip_after_sequence_end = 0
 	) {
 		std::vector<std::vector<T>> seqs;
 		std::vector<T> s;
 		for (int i = 0; i < seq.size(); i++) {
-			if (bernoulli(keep_prob, rng)) {
-				if (s.size() == 0 || bernoulli(continue_prob, rng)) {
+			if (bernoulli(rng, keep_prob)) {
+				if (s.size() == 0 || bernoulli(rng, continue_prob)) {
 					s.push_back(seq[i]);
 				}
 				else {

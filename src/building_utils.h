@@ -696,7 +696,7 @@ namespace yb {
 				for (int j = 0; j < n; j++) { // n windows per size
 					auto win_center_xz = p1 + dir*(eps + w / 2.f + (w + s)*j);
 					// Keep around f_p_s percent of windows
-					if (!bernoulli(params.win_pars.filled_spots_ratio, *params.rng))
+					if (!bernoulli(*params.rng, params.win_pars.filled_spots_ratio))
 						continue;
 
 					auto win_center_y =
@@ -706,7 +706,7 @@ namespace yb {
 					auto win_inst = new ygl::instance();
 					win_inst->name = params.win_pars.name + "_" + std::to_string(win_id++);
 					win_inst->shp =
-						bernoulli(params.win_pars.open_windows_ratio, *params.rng) ?
+						bernoulli(*params.rng, params.win_pars.open_windows_ratio) ?
 						params.win_pars.open_window_shape :
 						params.win_pars.closed_window_shape;
 					win_inst->frame.o = to_3d(win_center_xz, win_center_y);
@@ -748,15 +748,15 @@ namespace yb {
 	) {
 		building_params *params = new building_params();
 		params->type = choose_random_weighted(
+			rng,
 			std::vector<building_type>{
 				building_type::main_points,
 				building_type::border,
 				building_type::regular
 			},
-			{80.f, 5.f, 20.f},
-			rng
+			{ 80.f, 5.f, 20.f }
 		);
-		int num_segments = choose_random(std::vector<int>{ 3,4,5,6,7,8 }, rng);
+		int num_segments = choose_random(rng, std::vector<int>{ 3,4,5,6,7,8 });
 		params->floor_main_points = make_segmented_line(
 		{ 0,0 }, num_segments, yb::pi / 2.f,
 			[&rng]() {
@@ -785,22 +785,22 @@ namespace yb {
 
 		if (params->type == building_type::main_points) {
 			params->roof_pars.type = yb::choose_random_weighted(
+				rng,
 				std::vector<roof_type>{ 
 					roof_type::crossgabled,
 					roof_type::crosshipped,
 					roof_type::pyramid,
 					roof_type::none
 				},
-				std::vector<float>{75.f, 10.f, 10.f, 5.f},
-				rng
+				std::vector<float>{75.f, 10.f, 10.f, 5.f}
 			);
 			params->roof_pars.type = roof_type::none;
 		}
 		else {
 			params->roof_pars.type = yb::choose_random_weighted(
+				rng,
 				std::vector<roof_type>{roof_type::pyramid, roof_type::none},
-				std::vector<float>{85.f, 15.f},
-				rng
+				std::vector<float>{85.f, 15.f}
 			);
 		}
 		params->roof_pars.color1 = yb::rand_color3f(rng);
@@ -961,7 +961,7 @@ namespace yb {
 			// Recursive building spans whole roof
 			mainpts_subs.front().size() == params.floor_main_points.size() 
 			) {
-			if (bernoulli(0.5f, *params.rng)) {
+			if (bernoulli(*params.rng, 0.5f)) {
 				mainpts_subs.front().erase(mainpts_subs.front().begin());
 			}
 			else {
@@ -1011,7 +1011,7 @@ namespace yb {
 		// Recursive buildings
 		if (params.type == building_type::main_points &&
 			//params.roof_pars.type == roof_type::none &&
-			bernoulli(params.roof_pars.recursive_prob, *params.rng)
+			bernoulli(*params.rng, params.roof_pars.recursive_prob)
 		) {
 			auto rec_params =
 				params.roof_pars.recursive_params != nullptr ?
