@@ -113,6 +113,16 @@ namespace yb {
 		// Windows
 		windows_params win_pars;
 
+		// Tower
+		float tower_prob; // Probability to build a tower
+		bool tower_on_shrinking_building; // If false, no tower is built near an expanding 
+		                                  // building (otherwise they would collide)
+		std::function<int(const std::vector<ygl::vec2f>& border)>
+			tower_placement;
+		int tower_num_floors;
+		int tower_num_sides;
+		float tower_radius;
+
 		// Wall
 		// -- nothing for now --
 	};
@@ -827,6 +837,29 @@ namespace yb {
 		params->win_pars.open_windows_ratio = uniform(rng, 0, 1);
 		params->win_pars.filled_spots_ratio = uniform(rng, 0, 1);
 
+		params->tower_prob = 0.3f;
+		params->tower_on_shrinking_building = false;
+		params->tower_num_floors = uniform(rng, 2, params->num_floors+10);
+		params->tower_num_sides = ygl::next_rand1i(rng, 20) + 3;
+		params->tower_radius = uniform(rng, 4, 10);
+		// Returns the longest side
+		// In a building generated from main points, the longest side will precede
+		// a left turn (i.e. the tower will *probably* be tangent to the building)
+		params->tower_placement = [&](const std::vector<ygl::vec2f>& border)->int{
+			auto max_length = 0.f;
+			auto side = 0;
+			auto i = 0;
+			for_sides(border, [&](const ygl::vec2f& p1, const ygl::vec2f& p2){
+				auto length = ygl::length(p2 - p1);
+				if (length > max_length) {
+					max_length = length;
+					side = i;
+				}
+				i++;
+			});
+			return side;
+		};
+
 		return params;
 	}
 
@@ -945,6 +978,64 @@ namespace yb {
 		return { r_shp, t_shp != nullptr ? t_shp : new ygl::shape() };
 	}
 
+	// Definition later
+	std::vector<ygl::instance*> make_building(
+		const building_params& params,
+		float base_height = 0.f
+	);
+
+	std::vector<ygl::instance*> make_tower_from_params(
+		const building_params& params
+	) {
+		std::vector<ygl::vec2f> border;
+		switch (params.type) {
+		case building_type::main_points:
+			border = to_2d(make_wide_line_border(params.floor_main_points, params.floor_width));
+			break;
+		case building_type::border:
+			border = params.floor_border;
+			break;
+		case building_type::regular:
+			border = make_regular_polygon(params.num_sides, params.radius, params.reg_base_angle);
+			break;
+		}
+		auto side = params.tower_placement(border);
+		ygl::vec2f b1, b2; // Building's side
+		if (side != border.size() - 1) {
+			b1 = border[side];
+			b2 = border[side + 1];
+		}
+		else {
+			b1 = border.back();
+			b2 = border[0];
+		}
+		auto building_border_center = (b1+b2)/2;
+		auto alpha = (2*pi) / params.tower_num_sides; // Angle between two vertices of the tower's floor
+		auto gamma = pi / 2 - (alpha/2); // Last angle of the triangle between vertex, border center and tower center
+		auto half_side_length = params.tower_radius*sin(alpha / 2);
+		auto dist_center_from_border = sqrtf(powf(params.tower_radius, 2) - powf(half_side_length, 2)); // Pitagora's theorem
+		auto b2t_angle = get_angle(b2 - b1) - pi / 2;  // Border side's center to tower center
+		auto tower_floor_center =
+			building_border_center + ygl::vec2f(cos(b2t_angle), sin(b2t_angle))*dist_center_from_border;
+		auto reg_base_angle = get_angle(b2 - b1) + (pi - gamma);
+
+		auto tower_params = params;
+		// Manually fix parameters
+		tower_params.id = params.id + "_tower";
+		tower_params.type = building_type::regular;
+		tower_params.num_floors = params.tower_num_floors;
+		tower_params.num_sides = params.tower_num_sides;
+		tower_params.radius = params.tower_radius;
+		tower_params.roof_pars.type = roof_type::pyramid;
+		tower_params.tower_prob = 0.f;
+		 
+		auto tower_insts = make_building(tower_params);
+		for (auto ti : tower_insts) {
+			translate(ti, to_3d(tower_floor_center));
+		}
+		return tower_insts;
+	}
+
 	std::vector<std::vector<ygl::vec2f>> recursive_main_points(
 		const building_params& params
 	) {
@@ -979,7 +1070,7 @@ namespace yb {
 
 	std::vector<ygl::instance*> make_building(
 		const building_params& params,
-		float base_height = 0.f
+		float base_height
 	) {
 		std::vector<ygl::instance*> instances;
 		
@@ -1007,8 +1098,8 @@ namespace yb {
 			make_material("", params.roof_pars.color2, nullptr, { 0,0,0 })
 		);
 		
-		auto w_insts = make_windows(params);
-		instances.insert(instances.end(), w_insts.begin(), w_insts.end());
+		// auto w_insts = make_windows(params);
+		// instances.insert(instances.end(), w_insts.begin(), w_insts.end());
 
 		for (auto i : instances) {
 			translate(i, ygl::vec3f{ 0, base_height, 0 });
@@ -1042,6 +1133,7 @@ namespace yb {
 				(params.floor_width+total_width_offset)/2.f*0.75f
 			);
 			rec_params->reg_base_angle = params.reg_base_angle;
+			rec_params->tower_prob = 0.f;
 			
 			// Color homogeneity
 			rec_params->color1 = params.color1;
@@ -1069,6 +1161,14 @@ namespace yb {
 				for (auto ri : rec_insts) {
 					instances.push_back(ri);
 				}
+			}
+		}
+
+		if ((params.width_delta_per_floor <= 0.f || params.tower_on_shrinking_building) &&
+			bernoulli(*params.rng, params.tower_prob)
+			) {
+			for (auto ti : make_tower_from_params(params)) {
+				instances.push_back(ti);
 			}
 		}
 
