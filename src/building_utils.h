@@ -761,12 +761,11 @@ namespace yb {
 			rng,
 			std::vector<building_type>{
 				building_type::main_points,
-				building_type::border,
 				building_type::regular
 			},
-			{ 80.f, 5.f, 20.f }
+			{ 90.f, 10.f }
 		);
-		int num_segments = choose_random(rng, std::vector<int>{ 3,4,5,6,7,8 });
+		int num_segments = choose_random(rng, std::vector<int>{ 3,4,5,6,7 });
 		params->floor_main_points = make_segmented_line(
 		{ 0,0 }, num_segments, yb::pi / 2.f,
 			[&rng]() {
@@ -837,7 +836,7 @@ namespace yb {
 		params->win_pars.open_windows_ratio = uniform(rng, 0, 1);
 		params->win_pars.filled_spots_ratio = uniform(rng, 0, 1);
 
-		params->tower_prob = 0.3f;
+		params->tower_prob = 0.6f;
 		params->tower_on_shrinking_building = false;
 		params->tower_num_floors = uniform(rng, 2, params->num_floors+10);
 		params->tower_num_sides = ygl::next_rand1i(rng, 20) + 3;

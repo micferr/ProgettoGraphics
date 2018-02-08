@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
 	// add camera
 	auto cam = new ygl::camera{ "cam" };
 	cam->frame = ygl::lookat_frame3f(
-		{ 0.f,150.f,500.f }, { 0.f, 20.f, 0.f }, { 0.f, 1.f, 0.f }
+		{ 0.f,220.f,800.f }, { 0.f, 20.f, 0.f }, { 0.f, 1.f, 0.f }
 	);
 	cam->yfov = 15.f * yb::pi / 180.f;
 	cam->aspect = 16.0f / 9.0f;
