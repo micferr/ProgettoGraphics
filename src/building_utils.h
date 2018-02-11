@@ -117,11 +117,11 @@ namespace yb {
 		float tower_prob; // Probability to build a tower
 		bool tower_on_shrinking_building; // If false, no tower is built near an expanding 
 		                                  // building (otherwise they would collide)
-		std::function<int(const std::vector<ygl::vec2f>& border)>
-			tower_placement;
-		int tower_num_floors;
-		int tower_num_sides;
-		float tower_radius;
+		std::function<int(const std::vector<ygl::vec2f>&)>
+			tower_placement = [](const std::vector<ygl::vec2f>& border)->int {return 0;};
+		int tower_num_floors = 2;
+		int tower_num_sides = 4;
+		float tower_radius = 1.f;
 
 		// Wall
 		// -- nothing for now --
