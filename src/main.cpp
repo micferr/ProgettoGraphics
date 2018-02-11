@@ -81,6 +81,8 @@ int main(int argc, char** argv) {
 			);
 		}
 		for (auto inst : insts) yb::add_to_scene(scn, inst);
+		
+		delete params;
 	}
 
 	// Sky
